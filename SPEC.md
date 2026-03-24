@@ -208,7 +208,7 @@ MVP 後に `equipment_import.cgi` を追加する余地を残す。
 - symptom: TEXT
 - work_detail: TEXT
 - result: TEXT
-- priority: TEXT
+- priority: TEXT（NULL 許可。未設定を許容する）
 - recorded_at: TEXT
 - needs_followup: INTEGER
 - followup_due: TEXT
@@ -235,6 +235,14 @@ MVP 後に `equipment_import.cgi` を追加する余地を残す。
 - in_progress
 - done
 - pending_parts
+
+### priority 固定値（NULL 許可）
+- low
+- medium
+- high
+- critical
+
+MVP では入力必須にしない。一覧絞り込み対象には含めない。詳細画面では表示可。
 
 ### sync_state 固定値
 - local_only

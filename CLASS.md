@@ -66,6 +66,14 @@ classDiagram
     update
     delete
   }
+
+  class Priority {
+    <<enum>>
+    low
+    medium
+    high
+    critical
+  }
 ```
 
 ---
@@ -99,6 +107,8 @@ classDiagram
     +String created_at
     +String last_access_at
   }
+
+  note for Session "session_token: secrets.token_urlsafe(32)\n約43文字のURL-safeランダム文字列\nスライディング有効期限: 最終操作から7日"
 
   class LoginAttempt {
     <<SQLite>>
@@ -161,6 +171,8 @@ classDiagram
     +int deleted_by FK NULL
   }
 
+  note for WorkLog "priority: low/medium/high/critical, NULL可\nserver_updated_at: UTC ISO 8601\nrevision: 競合判定の唯一の基準"
+
   class WorkPhoto {
     <<SQLite>>
     +int id PK
@@ -170,6 +182,8 @@ classDiagram
     +String taken_at NULL
     +String created_at
   }
+
+  note for WorkPhoto "photo_path: サーバー相対パス\n例: /uploads/photos/2026/03/uuid-01.jpg\nMVP では未使用（Phase 5）。テーブルのみ先行作成"
 
   Equipment "0..1" --> "0..*" WorkLog : equipment_id（NULL可）
   WorkLog "1" --> "0..*" WorkPhoto : log_uuid
@@ -304,6 +318,8 @@ classDiagram
     +String created_at
   }
 
+  note for SyncQueue "payload: JSON文字列\ncreate: log_uuid + fields\nupdate: log_uuid + base_revision + fields\ndelete: log_uuid + base_revision\nuser_id/revision/sync_state 等はAPI側が管理"
+
   class SyncMeta {
     <<IndexedDB>>
     +String key PK
@@ -372,10 +388,34 @@ classDiagram
     +SyncPushEntity entity
   }
 
-  class SyncPushEntity {
+  class SyncPushEntityCreate {
+    +String log_uuid
+    +SyncPushFields fields
+  }
+
+  class SyncPushEntityUpdate {
     +String log_uuid
     +int base_revision
-    +Object fields
+    +SyncPushFields fields
+  }
+
+  class SyncPushEntityDelete {
+    +String log_uuid
+    +int base_revision
+  }
+
+  class SyncPushFields {
+    +int equipment_id NULL
+    +String record_type
+    +String status
+    +String title
+    +String symptom NULL
+    +String work_detail NULL
+    +String result NULL
+    +String priority NULL
+    +String recorded_at
+    +int needs_followup
+    +String followup_due NULL
   }
 
   class SyncPushResult {
@@ -397,9 +437,17 @@ classDiagram
     +String next_since_token
   }
 
-  SyncPushItem "1" --> "1" SyncPushEntity : entity
+  SyncPushItem --> SyncPushEntityCreate : operation=create
+  SyncPushItem --> SyncPushEntityUpdate : operation=update
+  SyncPushItem --> SyncPushEntityDelete : operation=delete
+  SyncPushEntityCreate "1" --> "1" SyncPushFields : fields
+  SyncPushEntityUpdate "1" --> "1" SyncPushFields : fields（変更項目のみ）
   SyncPullResponse "1" --> "1" SyncPullData : data
   SyncPullData "1" --> "0..*" WorkLogLocal : items
+
+  note for SyncPushFields "禁止項目（API側が管理）:\nuser_id / created_by / updated_by\ndeleted_by / server_updated_at\nrevision / sync_state"
+  note for SyncPushEntityUpdate "base_revision 必須\nAPI側でrevision check\n成功時 revision = revision + 1"
+  note for SyncPushEntityDelete "物理削除ではない\nAPI側でtombstone更新:\ndeleted_flag=1, deleted_at=now\ndeleted_by=current_user_id\nrevision=revision+1"
 ```
 
 ---
@@ -464,3 +512,28 @@ classDiagram
     delete : 論理削除（tombstone 更新）
   }
 ```
+
+### WorkLog.priority
+```mermaid
+classDiagram
+  class Priority {
+    <<enum>>
+    low : 低
+    medium : 中
+    high : 高
+    critical : 緊急
+  }
+```
+
+> NULL 許可（「未設定」を意味する）。MVP では入力必須にしない。
+> 一覧の絞り込み対象には含めない。詳細画面では表示可。
+
+### Session.session_token 生成方式
+- `secrets.token_urlsafe(32)`（Python 標準ライブラリ）
+- 約 43 文字の URL-safe ランダム文字列
+- DB 上は `TEXT UNIQUE`
+
+### WorkPhoto.photo_path 保存形式
+- サーバー相対パスで保存（例: `/uploads/photos/2026/03/uuid-01.jpg`）
+- フル URL は保存しない
+- クライアントは API ベース URL に連結して表示する
