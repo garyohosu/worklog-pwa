@@ -172,7 +172,7 @@ MVP 後に `equipment_import.cgi` を追加する余地を残す。
 
 - id: INTEGER PRIMARY KEY
 - log_uuid: TEXT UNIQUE
-- user_id: INTEGER
+- user_id: INTEGER（所有ユーザー）
 - equipment_id: INTEGER（**NULL 許可**。`record_type=memo` など設備なし記録に対応）
 - record_type: TEXT
 - status: TEXT
@@ -184,29 +184,43 @@ MVP 後に `equipment_import.cgi` を追加する余地を残す。
 - recorded_at: TEXT
 - needs_followup: INTEGER
 - followup_due: TEXT
-- local_updated_at: TEXT
-- server_updated_at: TEXT
+- local_updated_at: TEXT（ローカル表示用の参考時刻。競合判定には使わない）
+- server_updated_at: TEXT（サーバー保存日時。UTC の ISO 8601）
+- revision: INTEGER NOT NULL DEFAULT 1（競合判定の唯一の基準）
 - sync_state: TEXT
+- created_by: INTEGER
+- updated_by: INTEGER
 - deleted_flag: INTEGER（論理削除。1=削除済み）
+- deleted_at: TEXT
+- deleted_by: INTEGER
 
-### record_type 例
+### record_type 固定値
 - inspection
 - repair（修理作業の記録）
 - trouble（不具合・異常の記録。修理完了まで同一レコードで status を更新する運用を基本とする）
 - maintenance
 - memo（設備なし記録の代表例）
 
-### status 例
+### status 固定値
 - draft
 - open
 - in_progress
 - done
 - pending_parts
 
-### sync_state 例
+### sync_state 固定値
 - local_only
 - dirty
 - synced
+- failed
+- conflict
+
+### work_logs 補足
+- `user_id` は記録の所有者を表す
+- `created_by` / `updated_by` / `deleted_by` は操作ユーザーを表す
+- 競合判定は `revision` のみで行う
+- `local_updated_at` は UI 表示用の参考値であり、更新可否の判定には使わない
+- `server_updated_at` と `deleted_at` は UTC の ISO 8601 で保持する
 
 ## 5.4 work_photos
 写真情報を保持する。**MVP では利用しないが、テーブルは先に作成する。**
@@ -282,6 +296,8 @@ MVP 後に `equipment_import.cgi` を追加する余地を残す。
 - API 呼び出し時に `Authorization: Bearer <token>` ヘッダーで送信
 - Cookie は使用しない（別オリジン構成のため）
 - 期限切れ時は再ログイン
+- オフライン中は下書き作成・編集を継続可能とする
+- 再オンライン時は `session_check.cgi` を行い、期限切れなら再ログイン成功後に未同期データを送信する
 
 ---
 
@@ -372,8 +388,10 @@ MVP 後に `equipment_import.cgi` を追加する余地を残す。
 
 ## 7.8 同期管理画面
 - 未同期一覧
-- 同期成功件数
-- 同期失敗件数
+- pending 件数
+- failed 件数
+- conflict 件数
+- 各アイテムの最終エラー
 - 再送
 
 ## 7.9 マイページ
@@ -407,11 +425,13 @@ MVP 後に `equipment_import.cgi` を追加する余地を残す。
 5. 未登録なら候補表示する
 
 ## 8.3 同期
-1. `local_only` / `dirty` レコードを抽出する
-2. API へ順次送信する（プッシュ）
-3. サーバー側の最新データを取り込む（プル）
-4. 成功時は `synced` に変更する
-5. 失敗時はエラーを保持する
+1. `sync_queue` から `pending` / `retrying` の操作を抽出する
+2. `sync_push` で順次送信する（プッシュ）
+3. 更新・削除時は `base_revision` とサーバー上の `revision` を比較する
+4. 成功時は対象キューを `done` にし、対象レコードを `synced` に更新する
+5. 競合時は 409 Conflict とサーバー版を受け取り、キューを `conflict` にする
+6. `sync_pull` を `since_token` 付きで実行し、削除 tombstone を含む最新データを取り込む
+7. 失敗時は `failed` としてエラーを保持する
 
 ---
 
@@ -423,18 +443,58 @@ IndexedDB に以下を保存する。
 - 未同期記録
 - 最近使用設備
 - 設備マスタキャッシュ
+- `sync_queue`（未送信操作、失敗情報、競合状態）
 - セッション関連の必要最小情報
+
+### 9.1.1 sync_queue ストア
+- queue_id
+- entity_type（`work_log`）
+- entity_id（`log_uuid`）
+- operation（`create` / `update` / `delete`）
+- payload
+- status（`pending` / `retrying` / `failed` / `conflict` / `done`）
+- retry_count
+- last_error_code
+- last_error_message
+- last_error_at
+- last_attempt_at
+- created_at
 
 ## 9.2 同期方式
 - 新規記録は log_uuid をクライアントで発行
+- 更新・削除時は、クライアントが見ていた `base_revision` を送る
+- サーバー保存成功時は `server_updated_at` を現在 UTC に更新し、`revision = revision + 1` とする
 - ローカル変更は `dirty` とする
 - サーバー反映後に `synced` とする
+- `sync_pull` は `since_token`（サーバー側変更日時の UTC 文字列）を使って差分取得する
+- `sync_pull` のレスポンスは `next_since_token` を返す
 - ログイン後・同期時にサーバー側最新データをプル取得する
+- プル同期では削除済みレコードも tombstone として返す
 
 ## 9.3 競合ルール
-初期版は**最後の保存を優先**する。
-複数デバイスからの同時利用を想定するが、MVP では競合解決は簡易対応とする。
-将来、複数人編集に対応する場合は競合検知を導入する。
+初期版は **revision 一致時のみ更新** とする。
+
+- クライアントは更新時に `base_revision` を送る
+- サーバー上の `revision == base_revision` の場合のみ更新を受け付ける
+- 更新成功時は `revision = revision + 1` とする
+- 不一致時は HTTP 409 Conflict を返し、サーバー版のレコードを返す
+- クライアントは競合レコードをローカルで保持し、`sync_queue.status = conflict` として同期管理画面に表示する
+- 自動マージは行わない
+
+## 9.4 論理削除同期
+- 削除 API は物理削除しない
+- 削除時は `deleted_flag = 1`、`deleted_at = server current UTC`、`deleted_by = current_user_id`、`revision = revision + 1` とする
+- プル同期では削除済みレコードも返す
+- クライアントは `deleted_flag = 1` を受けたらローカルでも削除済みに更新し、通常一覧からは非表示にする
+- admin 表示や監査用途では削除済みも参照可能とする
+- tombstone は最低 90 日保持し、その後の物理削除は将来運用で検討する
+
+## 9.5 オフライン中のセッション期限切れ
+- オフライン中は下書き作成・編集を継続可能とする
+- オフライン中は同期しない
+- 再オンライン時に `session_check.cgi` を行う
+- セッション期限切れなら再ログインを要求する
+- 再ログイン成功後に未同期データを送信する
 
 ---
 
@@ -466,33 +526,95 @@ IndexedDB に以下を保存する。
 # 11. API仕様
 
 ## 11.1 認証系 API
-- register.cgi
-- login.cgi
-- logout.cgi
-- session_check.cgi
-- change_password.cgi
+- `POST /api/register.cgi`
+- `POST /api/login.cgi`
+- `POST /api/logout.cgi`
+- `GET /api/session_check.cgi`
+- `POST /api/change_password.cgi`
 
-## 11.2 業務系 API
-- worklog_api.cgi
-- equipment_api.cgi
-- upload.cgi（Phase 5 以降）
+## 11.2 equipment_api.cgi
+- `GET /api/equipment_api.cgi`
+  - `action=list`
+  - `action=search&q=...`
+  - `action=by_qr&qr_value=MC-001`
+- `POST /api/equipment_api.cgi`
+  - admin による新規登録
+- `PUT /api/equipment_api.cgi`
+  - admin による更新
 
-## 11.3 worklog_api.cgi 想定機能
-- 記録一覧取得（ページネーション: 50件/ページ）
-- 記録詳細取得
-- 新規登録
-- 更新
-- 状態変更
-- 論理削除（deleted_flag=1）
-- 同期（プッシュ / プル）
+## 11.3 worklog_api.cgi
+- `GET /api/worklog_api.cgi`
+  - `action=list&page=1&page_size=50`
+  - `action=detail&log_uuid=...`
+  - `action=sync_pull&since_token=...`
+- `POST /api/worklog_api.cgi`
+  - `action=create`
+  - `action=sync_push`
+- `PUT /api/worklog_api.cgi`
+  - `action=update`
+  - `action=status`
+- `DELETE /api/worklog_api.cgi`
+  - `action=delete&log_uuid=...`
+  - 実体は論理削除とする
 
-## 11.4 equipment_api.cgi 想定機能
-- 設備一覧取得
-- 設備検索
-- QR 値検索
-- 管理者による設備登録 / 更新
+## 11.4 upload.cgi（Phase 5 以降）
+- `POST /api/upload.cgi`
 
-## 11.5 API レスポンス形式
+## 11.5 ページング
+- リスト系は `page` と `page_size` を受け付ける
+- レスポンスは `total` と `has_next` を返す
+
+## 11.6 同期 payload
+
+### 更新 API
+クライアントは更新時に `base_revision` を送る。
+
+```json
+{
+  "log_uuid": "xxxx",
+  "base_revision": 7,
+  "patch": {
+    "status": "done",
+    "result": "交換後正常"
+  }
+}
+```
+
+### sync_push
+```json
+{
+  "items": [
+    {
+      "operation": "update",
+      "entity": {
+        "log_uuid": "xxxx",
+        "base_revision": 7,
+        "fields": {
+          "status": "done"
+        }
+      }
+    }
+  ]
+}
+```
+
+### sync_pull request
+`GET /api/worklog_api.cgi?action=sync_pull&since_token=2026-03-24T00:00:00Z`
+
+### sync_pull response
+```json
+{
+  "status": "ok",
+  "data": {
+    "items": [],
+    "next_since_token": "2026-03-24T10:15:00Z"
+  }
+}
+```
+
+`since_token` はサーバー側変更日時の UTC 文字列を使う。競合判定は `revision`、差分取得は `since_token` に役割を分ける。
+
+## 11.7 API レスポンス形式
 JSON で統一する。
 
 ### 成功時
@@ -519,12 +641,27 @@ JSON で統一する。
   "status": "ok",
   "data": {
     "items": [],
-    "total": 0
+    "total": 0,
+    "has_next": false
   }
 }
 ```
 
-## 11.6 認証ヘッダー
+### 競合時
+HTTP ステータスは `409 Conflict` とする。
+
+```json
+{
+  "status": "error",
+  "message": "Conflict",
+  "data": {
+    "server_entity": {}
+  },
+  "errors": []
+}
+```
+
+## 11.8 認証ヘッダー
 ```
 Authorization: Bearer <session_token>
 ```
@@ -540,7 +677,7 @@ Authorization: Bearer <session_token>
 - 他人の記録を勝手に取得不可
 - セッション期限あり（7日）
 - HTTPS 利用
-- CORS は許可オリジン限定（`https://garyohosu.github.io` / `localhost`）
+- CORS は許可オリジン限定（`https://garyohosu.github.io` / `http://localhost` / `http://127.0.0.1`）
 - 管理機能は role チェック必須
 - 入力値バリデーション実施
 - SQL 注入対策実施
