@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>利用ガイド - 作業記録PWA</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #212121; }
+    header { background: #1976d2; color: #fff; padding: 16px 24px; }
+    header h1 { font-size: 1.2rem; }
+    main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
+    .card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }
+    h2 { font-size: 1.2rem; color: #1976d2; margin-bottom: 12px; }
+    h3 { font-size: 1rem; margin: 16px 0 8px; color: #333; }
+    p { line-height: 1.7; margin-bottom: 10px; color: #444; font-size: 0.95rem; }
+    ol, ul { padding-left: 24px; margin-bottom: 10px; }
+    li { line-height: 1.7; font-size: 0.95rem; color: #444; }
+    .adsense { margin: 16px 0; }
+    .adsense-placeholder { background: #e8e8e8; border: 1px dashed #bbb; padding: 20px; text-align: center; color: #888; border-radius: 4px; font-size: 0.85rem; }
+    footer { background: #212121; color: #ccc; padding: 20px; text-align: center; font-size: 0.85rem; }
+    footer a { color: #90caf9; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><a href="/index.html" style="color:#fff;text-decoration:none;">作業記録PWA</a> - 利用ガイド</h1>
+  </header>
+  <main>
+    <!-- AdSense -->
+    <div class="adsense">
+      <div class="adsense-placeholder"><!-- AdSense -->広告エリア</div>
+    </div>
+
+    <div class="card">
+      <h2>はじめに</h2>
+      <p>作業記録PWAは、工場や設備の点検・修理・トラブル対応をスマートフォンからオフラインでも記録できるWebアプリです。</p>
+      <p>インターネット接続がなくても記録を保存し、接続が回復した際に自動でサーバーに同期します。</p>
+    </div>
+
+    <div class="card">
+      <h2>アカウント登録とログイン</h2>
+      <h3>新規登録</h3>
+      <ol>
+        <li>トップページの「新規登録」ボタンをタップします</li>
+        <li>ログインID、表示名、パスワード（8文字以上）を入力します</li>
+        <li>「登録する」ボタンをタップして完了です</li>
+      </ol>
+      <h3>ログイン</h3>
+      <ol>
+        <li>ログインIDとパスワードを入力します</li>
+        <li>「ログイン」ボタンをタップします</li>
+      </ol>
+    </div>
+
+    <div class="card">
+      <h2>作業記録の作成</h2>
+      <ol>
+        <li>ホーム画面の「+ 新規記録」ボタンをタップします</li>
+        <li>タイトル、種別、状態を選択します</li>
+        <li>症状・作業内容・結果を記入します</li>
+        <li>「保存する」ボタンをタップして保存します</li>
+      </ol>
+      <p>記録はローカルに保存され、次回同期時にサーバーへ送信されます。</p>
+    </div>
+
+    <div class="card">
+      <h2>QRコード読取</h2>
+      <p>編集画面の「QR読取」ボタンから、設備に貼付されたQRコードをカメラで読み取ると、設備情報が自動入力されます。</p>
+    </div>
+
+    <div class="card">
+      <h2>同期について</h2>
+      <p>ホーム画面の「同期する」ボタンまたは同期管理画面から、サーバーとのデータ同期を実行できます。</p>
+      <h3>競合（コンフリクト）</h3>
+      <p>同じレコードを複数のデバイスから同時に編集した場合、競合が発生することがあります。競合が発生した場合は、同期管理画面で手動解決が必要です。</p>
+    </div>
+
+    <div class="card">
+      <h2>オフライン利用</h2>
+      <p>一度アクセスしたページはオフラインでも閲覧・編集が可能です。作成・編集した記録は、次回オンライン時に自動送信されます。</p>
+    </div>
+  </main>
+  <footer>
+    <p>&copy; 2024 作業記録PWA</p>
+    <p style="margin-top:8px;">
+      <a href="/index.html">トップ</a> ·
+      <a href="/privacy-policy/">プライバシーポリシー</a> ·
+      <a href="/terms/">利用規約</a> ·
+      <a href="/contact/">お問い合わせ</a>
+    </p>
+  </footer>
+</body>
+</html>

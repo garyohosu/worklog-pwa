@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>お問い合わせ - 作業記録PWA</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #212121; }
+    header { background: #1976d2; color: #fff; padding: 16px 24px; }
+    header h1 { font-size: 1.2rem; }
+    main { max-width: 600px; margin: 0 auto; padding: 24px 16px; }
+    .card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }
+    h2 { font-size: 1.1rem; color: #1976d2; margin-bottom: 16px; }
+    p { line-height: 1.7; margin-bottom: 12px; color: #444; font-size: 0.95rem; }
+    .form-group { margin-bottom: 18px; }
+    label { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 6px; color: #333; }
+    input, select, textarea { width: 100%; padding: 11px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.95rem; outline: none; font-family: inherit; }
+    input:focus, select:focus, textarea:focus { border-color: #1976d2; box-shadow: 0 0 0 2px rgba(25,118,210,0.15); }
+    textarea { min-height: 120px; resize: vertical; }
+    .btn { padding: 12px 24px; background: #1976d2; color: #fff; border: none; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+    .btn:hover { background: #1565c0; }
+    #success-msg { display: none; background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+    #error-msg { display: none; background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+    footer { background: #212121; color: #ccc; padding: 20px; text-align: center; font-size: 0.85rem; }
+    footer a { color: #90caf9; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><a href="/index.html" style="color:#fff;text-decoration:none;">作業記録PWA</a> - お問い合わせ</h1>
+  </header>
+  <main>
+    <div class="card">
+      <h2>お問い合わせ</h2>
+      <p>ご質問・ご要望・不具合報告などは以下のフォームよりお送りください。</p>
+      <div id="error-msg" role="alert"></div>
+      <div id="success-msg" role="status"></div>
+      <form id="contact-form" novalidate>
+        <div class="form-group">
+          <label for="contact-name">お名前 <span style="color:#d32f2f;">*</span></label>
+          <input type="text" id="contact-name" placeholder="山田 太郎" required>
+        </div>
+        <div class="form-group">
+          <label for="contact-email">メールアドレス <span style="color:#d32f2f;">*</span></label>
+          <input type="email" id="contact-email" placeholder="example@mail.com" required>
+        </div>
+        <div class="form-group">
+          <label for="contact-category">お問い合わせ種別</label>
+          <select id="contact-category">
+            <option value="question">使い方に関する質問</option>
+            <option value="bug">不具合報告</option>
+            <option value="request">機能要望</option>
+            <option value="other">その他</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="contact-message">お問い合わせ内容 <span style="color:#d32f2f;">*</span></label>
+          <textarea id="contact-message" placeholder="お問い合わせ内容を入力してください" required></textarea>
+        </div>
+        <button type="submit" class="btn">送信する</button>
+      </form>
+    </div>
+  </main>
+  <footer>
+    <p>&copy; 2024 作業記録PWA</p>
+    <p style="margin-top:8px;">
+      <a href="/index.html">トップ</a> ·
+      <a href="/guide/">利用ガイド</a> ·
+      <a href="/privacy-policy/">プライバシーポリシー</a> ·
+      <a href="/terms/">利用規約</a>
+    </p>
+  </footer>
+  <script>
+    document.getElementById('contact-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const errEl = document.getElementById('error-msg');
+      const successEl = document.getElementById('success-msg');
+      errEl.style.display = 'none';
+      const name = document.getElementById('contact-name').value.trim();
+      const email = document.getElementById('contact-email').value.trim();
+      const msg = document.getElementById('contact-message').value.trim();
+      if (!name || !email || !msg) {
+        errEl.style.display = 'block';
+        errEl.textContent = '必須項目を入力してください。';
+        return;
+      }
+      // 実際の送信処理は未実装
+      successEl.style.display = 'block';
+      successEl.textContent = 'お問い合わせを受け付けました。ありがとうございます。';
+      document.getElementById('contact-form').reset();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ダッシュボード - 作業記録PWA</title>
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #212121; }
+    header { background: #37474f; color: #fff; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+    header h1 { font-size: 1.1rem; }
+    nav a { color: #fff; text-decoration: none; font-size: 0.85rem; padding: 6px 10px; }
+    main { max-width: 960px; margin: 0 auto; padding: 20px 16px; }
+    .grid { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
+    .card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); flex: 1; min-width: 220px; }
+    .card h2 { font-size: 0.95rem; font-weight: 700; color: #555; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { font-size: 0.9rem; color: #444; }
+    .stat-value { font-size: 1.1rem; font-weight: 700; color: #1976d2; }
+    .stat-value.highlight { color: #d32f2f; }
+    .period-cards { display: flex; gap: 12px; flex-wrap: wrap; }
+    .period-card { flex: 1; min-width: 100px; text-align: center; background: #f9f9f9; border-radius: 6px; padding: 16px 12px; }
+    .period-card .count { font-size: 1.8rem; font-weight: 700; color: #1976d2; }
+    .period-card .period { font-size: 0.8rem; color: #777; margin-top: 4px; }
+    .bar-chart { margin-top: 8px; }
+    .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .bar-label { font-size: 0.85rem; color: #555; min-width: 90px; }
+    .bar-track { flex: 1; height: 18px; background: #f0f0f0; border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; background: #1976d2; border-radius: 4px; transition: width 0.3s; min-width: 2px; }
+    .bar-count { font-size: 0.85rem; font-weight: 600; color: #333; min-width: 30px; text-align: right; }
+    #error-msg { display: none; background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+    .overdue-alert { background: #ffebee; border-left: 4px solid #d32f2f; padding: 16px; border-radius: 4px; }
+    .overdue-alert .count { font-size: 2rem; font-weight: 700; color: #d32f2f; }
+    .overdue-alert .label { font-size: 0.9rem; color: #555; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>管理者パネル - ダッシュボード</h1>
+    <nav>
+      <a href="/pages/admin/users.html">ユーザー管理</a>
+      <a href="/pages/home.html">アプリへ</a>
+    </nav>
+  </header>
+  <main>
+    <div id="error-msg" role="alert"></div>
+
+    <div class="grid">
+      <div class="card" style="min-width:100%;">
+        <h2>期間別記録数</h2>
+        <div class="period-cards">
+          <div class="period-card">
+            <div class="count" id="count-today">-</div>
+            <div class="period">今日</div>
+          </div>
+          <div class="period-card">
+            <div class="count" id="count-7d">-</div>
+            <div class="period">過去7日</div>
+          </div>
+          <div class="period-card">
+            <div class="count" id="count-30d">-</div>
+            <div class="period">過去30日</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>状態別件数</h2>
+        <div id="by-status" class="bar-chart"></div>
+      </div>
+      <div class="card">
+        <h2>種別別件数</h2>
+        <div id="by-type" class="bar-chart"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>フォローアップ超過</h2>
+      <div id="followup-overdue"></div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { API_BASE_URL, SESSION_TOKEN_KEY } from '/js/config.js';
+    import { ApiClient } from '/js/lib/api-client.js';
+
+    const token = sessionStorage.getItem(SESSION_TOKEN_KEY) || localStorage.getItem(SESSION_TOKEN_KEY);
+    if (!token) { location.href = '/pages/login.html'; }
+
+    const api = new ApiClient(API_BASE_URL, () => token);
+
+    const STATUS_LABELS = { draft: '下書き', open: '未対応', in_progress: '対応中', done: '完了', pending_parts: '部品待ち' };
+    const TYPE_LABELS = { inspection: '点検', repair: '修理', trouble: 'トラブル', maintenance: 'メンテ', memo: 'メモ' };
+
+    async function init() {
+      try {
+        const res = await api.adminDashboard();
+        const data = (res.data && res.data.data) ? res.data.data : {};
+        render(data);
+      } catch (e) {
+        const errEl = document.getElementById('error-msg');
+        errEl.style.display = 'block';
+        errEl.textContent = '読み込みに失敗しました: ' + (e.message || String(e));
+      }
+    }
+
+    function render(data) {
+      const period = data.total_by_period || {};
+      document.getElementById('count-today').textContent = period.today ?? '-';
+      document.getElementById('count-7d').textContent = period.last_7_days ?? '-';
+      document.getElementById('count-30d').textContent = period.last_30_days ?? '-';
+
+      const byStatus = data.by_status || {};
+      renderBarChart('by-status', byStatus, STATUS_LABELS, '#1976d2');
+
+      const byType = data.by_record_type || {};
+      renderBarChart('by-type', byType, TYPE_LABELS, '#2e7d32');
+
+      const overdue = data.followup_overdue ?? 0;
+      const overdueEl = document.getElementById('followup-overdue');
+      const alert = document.createElement('div');
+      alert.className = 'overdue-alert';
+      const countEl = document.createElement('div');
+      countEl.className = 'count';
+      countEl.textContent = overdue;
+      const labelEl = document.createElement('div');
+      labelEl.className = 'label';
+      labelEl.textContent = '件のフォローアップが期限を超過しています';
+      alert.appendChild(countEl);
+      alert.appendChild(labelEl);
+      overdueEl.appendChild(alert);
+    }
+
+    function renderBarChart(containerId, data, labels, color) {
+      const container = document.getElementById(containerId);
+      container.textContent = '';
+      const max = Math.max(...Object.values(data), 1);
+      for (const [key, count] of Object.entries(data)) {
+        const row = document.createElement('div');
+        row.className = 'bar-row';
+        const label = document.createElement('div');
+        label.className = 'bar-label';
+        label.textContent = labels[key] || key;
+        const track = document.createElement('div');
+        track.className = 'bar-track';
+        const fill = document.createElement('div');
+        fill.className = 'bar-fill';
+        fill.style.background = color;
+        fill.style.width = Math.round((count / max) * 100) + '%';
+        track.appendChild(fill);
+        const countEl = document.createElement('div');
+        countEl.className = 'bar-count';
+        countEl.textContent = count;
+        row.appendChild(label);
+        row.appendChild(track);
+        row.appendChild(countEl);
+        container.appendChild(row);
+      }
+    }
+
+    init().catch(console.error);
+  </script>
+</body>
+</html>

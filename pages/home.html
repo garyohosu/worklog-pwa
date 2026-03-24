@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ホーム - 作業記録PWA</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#1976d2">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #212121; }
+    header { background: #1976d2; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+    header h1 { font-size: 1.2rem; }
+    nav { display: flex; gap: 12px; }
+    nav a { color: #fff; text-decoration: none; font-size: 0.85rem; padding: 6px 10px; border-radius: 4px; }
+    nav a:hover { background: rgba(255,255,255,0.15); }
+    main { max-width: 900px; margin: 0 auto; padding: 20px 16px; }
+    .stats-row { display: flex; gap: 12px; margin-bottom: 20px; }
+    .stat-card { flex: 1; background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center; }
+    .stat-card .value { font-size: 2rem; font-weight: 700; color: #1976d2; }
+    .stat-card .label { font-size: 0.8rem; color: #666; margin-top: 4px; }
+    .stat-card.warning .value { color: #f57c00; }
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .section-header h2 { font-size: 1.05rem; font-weight: 600; }
+    .btn { padding: 10px 18px; border-radius: 6px; text-decoration: none; font-size: 0.9rem; font-weight: 600; cursor: pointer; border: none; display: inline-block; }
+    .btn-primary { background: #1976d2; color: #fff; }
+    .btn-primary:hover { background: #1565c0; }
+    .btn-success { background: #2e7d32; color: #fff; }
+    .btn-success:hover { background: #1b5e20; }
+    .action-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .log-list { display: flex; flex-direction: column; gap: 8px; }
+    .log-card { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; border-left: 4px solid #1976d2; }
+    .log-card:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+    .log-card .log-title { font-weight: 600; margin-bottom: 6px; }
+    .log-card .log-meta { font-size: 0.8rem; color: #666; display: flex; gap: 12px; flex-wrap: wrap; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+    .badge-open { background: #e3f2fd; color: #1565c0; }
+    .badge-in-progress { background: #fff3e0; color: #e65100; }
+    .badge-done { background: #e8f5e9; color: #2e7d32; }
+    .badge-draft { background: #f3e5f5; color: #6a1b9a; }
+    .badge-pending { background: #fce4ec; color: #ad1457; }
+    .adsense { margin: 20px 0; }
+    .adsense-placeholder { background: #e8e8e8; border: 1px dashed #bbb; padding: 20px; text-align: center; color: #888; border-radius: 4px; font-size: 0.85rem; }
+    .empty-state { text-align: center; padding: 40px 20px; color: #888; }
+    #sync-status { font-size: 0.85rem; color: #555; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>作業記録PWA</h1>
+    <nav>
+      <a href="/pages/list.html">一覧</a>
+      <a href="/pages/sync.html">同期</a>
+      <a href="/pages/mypage.html">マイページ</a>
+    </nav>
+  </header>
+  <main>
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="value" id="today-count">-</div>
+        <div class="label">今日の記録</div>
+      </div>
+      <div class="stat-card warning">
+        <div class="value" id="unsync-count">-</div>
+        <div class="label">未同期</div>
+      </div>
+      <div class="stat-card">
+        <div class="value" id="total-count">-</div>
+        <div class="label">総記録数</div>
+      </div>
+    </div>
+
+    <div class="action-row">
+      <a href="/pages/edit.html" class="btn btn-primary">+ 新規記録</a>
+      <button id="sync-btn" class="btn btn-success">同期する</button>
+      <span id="sync-status"></span>
+    </div>
+
+    <!-- AdSense -->
+    <div class="adsense">
+      <div class="adsense-placeholder"><!-- AdSense -->広告エリア</div>
+    </div>
+
+    <div class="section-header">
+      <h2>最近の記録</h2>
+      <a href="/pages/list.html" style="font-size:0.85rem;color:#1976d2;text-decoration:none;">すべて見る</a>
+    </div>
+    <div id="log-list" class="log-list">
+      <div class="empty-state">読み込み中...</div>
+    </div>
+  </main>
+  <script type="module">
+    import { API_BASE_URL, SESSION_TOKEN_KEY } from '/js/config.js';
+    import { ApiClient } from '/js/lib/api-client.js';
+    import { LocalDB } from '/js/lib/db-local.js';
+    import { SyncEngine } from '/js/lib/sync-engine.js';
+    import '/js/app.js';
+
+    const token = sessionStorage.getItem(SESSION_TOKEN_KEY) || localStorage.getItem(SESSION_TOKEN_KEY);
+    if (!token) { location.href = '/pages/login.html'; }
+
+    const api = new ApiClient(API_BASE_URL, () => token);
+    const db = new LocalDB();
+
+    async function init() {
+      await db.open();
+      await updateStats();
+      await loadRecentLogs();
+    }
+
+    async function updateStats() {
+      const items = await db.listWorkLogs({ deleted_flag: 0 });
+      const today = new Date().toISOString().slice(0, 10);
+      const todayCount = items.filter(r => r.recorded_at && r.recorded_at.startsWith(today)).length;
+      const unsyncCount = items.filter(r => r.sync_state === 'pending' || r.sync_state === 'failed').length;
+      document.getElementById('today-count').textContent = todayCount;
+      document.getElementById('unsync-count').textContent = unsyncCount;
+      document.getElementById('total-count').textContent = items.length;
+    }
+
+    async function loadRecentLogs() {
+      const items = await db.listWorkLogs({ deleted_flag: 0 });
+      items.sort((a, b) => (b.recorded_at || '').localeCompare(a.recorded_at || ''));
+      const recent = items.slice(0, 10);
+      const container = document.getElementById('log-list');
+      container.textContent = '';
+      if (recent.length === 0) {
+        const el = document.createElement('div');
+        el.className = 'empty-state';
+        el.textContent = '記録がありません。「新規記録」から作成してください。';
+        container.appendChild(el);
+        return;
+      }
+      for (const item of recent) {
+        const card = document.createElement('div');
+        card.className = 'log-card';
+        card.addEventListener('click', () => { location.href = '/pages/detail.html?uuid=' + encodeURIComponent(item.log_uuid); });
+        const title = document.createElement('div');
+        title.className = 'log-title';
+        title.textContent = item.title || '(タイトルなし)';
+        const meta = document.createElement('div');
+        meta.className = 'log-meta';
+        const statusBadge = document.createElement('span');
+        statusBadge.className = 'badge badge-' + (item.status || 'draft').replace('_', '-');
+        statusBadge.textContent = item.status || 'draft';
+        const dateSpan = document.createElement('span');
+        dateSpan.textContent = (item.recorded_at || '').slice(0, 10);
+        const typeSpan = document.createElement('span');
+        typeSpan.textContent = item.record_type || '';
+        meta.appendChild(statusBadge);
+        meta.appendChild(dateSpan);
+        meta.appendChild(typeSpan);
+        card.appendChild(title);
+        card.appendChild(meta);
+        container.appendChild(card);
+      }
+    }
+
+    document.getElementById('sync-btn').addEventListener('click', async () => {
+      const statusEl = document.getElementById('sync-status');
+      statusEl.textContent = '同期中...';
+      try {
+        const syncEngine = new SyncEngine(db, api);
+        await syncEngine.sync();
+        statusEl.textContent = '同期完了';
+        await updateStats();
+        await loadRecentLogs();
+      } catch (e) {
+        statusEl.textContent = '同期失敗: ' + (e.message || String(e));
+      }
+    });
+
+    init().catch(console.error);
+  </script>
+</body>
+</html>

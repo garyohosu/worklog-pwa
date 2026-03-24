@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ユーザー管理 - 作業記録PWA</title>
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #212121; }
+    header { background: #37474f; color: #fff; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+    header h1 { font-size: 1.1rem; }
+    nav a { color: #fff; text-decoration: none; font-size: 0.85rem; padding: 6px 10px; }
+    main { max-width: 1000px; margin: 0 auto; padding: 20px 16px; }
+    .card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th { text-align: left; padding: 10px 12px; background: #f5f5f5; border-bottom: 2px solid #e0e0e0; font-weight: 700; color: #555; font-size: 0.8rem; }
+    td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+    tr:hover td { background: #fafafa; }
+    .badge { padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+    .badge-admin { background: #fce4ec; color: #ad1457; }
+    .badge-user { background: #e3f2fd; color: #1565c0; }
+    .badge-active { background: #e8f5e9; color: #2e7d32; }
+    .badge-inactive { background: #ffebee; color: #c62828; }
+    .btn { padding: 7px 12px; border-radius: 5px; border: none; cursor: pointer; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+    .btn-sm-primary { background: #1976d2; color: #fff; }
+    .btn-sm-warning { background: #f57c00; color: #fff; }
+    .btn-sm-danger { background: #d32f2f; color: #fff; }
+    .btn-sm-success { background: #2e7d32; color: #fff; }
+    .btn-sm-outline { background: #fff; color: #555; border: 1px solid #ccc; }
+    .actions { display: flex; gap: 5px; flex-wrap: wrap; }
+    #error-msg { display: none; background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+    #success-msg { display: none; background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+    .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; }
+    .modal.show { display: flex; }
+    .modal-box { background: #fff; border-radius: 8px; padding: 24px; max-width: 400px; width: 90%; }
+    .modal-box h3 { margin-bottom: 12px; }
+    .modal-box p { margin-bottom: 20px; color: #555; font-size: 0.9rem; }
+    .modal-pw { font-family: monospace; font-size: 1.1rem; background: #f5f5f5; padding: 10px; border-radius: 4px; word-break: break-all; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>管理者パネル - ユーザー管理</h1>
+    <nav>
+      <a href="/pages/admin/dashboard.html">ダッシュボード</a>
+      <a href="/pages/home.html">アプリへ</a>
+    </nav>
+  </header>
+  <main>
+    <div id="error-msg" role="alert"></div>
+    <div id="success-msg" role="status"></div>
+
+    <div class="card">
+      <table id="user-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>ログインID</th>
+            <th>表示名</th>
+            <th>ロール</th>
+            <th>状態</th>
+            <th>最終ログイン</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="user-tbody">
+          <tr><td colspan="7" style="text-align:center;padding:24px;color:#888;">読み込み中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <div id="pw-modal" class="modal">
+    <div class="modal-box">
+      <h3>仮パスワード</h3>
+      <p>以下の仮パスワードをユーザーに通知してください。</p>
+      <div class="modal-pw" id="temp-pw"></div>
+      <div class="modal-actions">
+        <button class="btn btn-sm-outline" id="close-modal">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { API_BASE_URL, SESSION_TOKEN_KEY } from '/js/config.js';
+    import { ApiClient } from '/js/lib/api-client.js';
+
+    const token = sessionStorage.getItem(SESSION_TOKEN_KEY) || localStorage.getItem(SESSION_TOKEN_KEY);
+    if (!token) { location.href = '/pages/login.html'; }
+
+    const api = new ApiClient(API_BASE_URL, () => token);
+
+    async function init() {
+      try {
+        const res = await api.adminUserList();
+        const users = (res.data && res.data.items) ? res.data.items : [];
+        renderUsers(users);
+      } catch (e) {
+        const errEl = document.getElementById('error-msg');
+        errEl.style.display = 'block';
+        errEl.textContent = '読み込みに失敗しました: ' + (e.message || String(e));
+      }
+    }
+
+    function renderUsers(users) {
+      const tbody = document.getElementById('user-tbody');
+      tbody.textContent = '';
+      if (users.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.setAttribute('colspan', '7');
+        td.style.textAlign = 'center';
+        td.style.padding = '24px';
+        td.style.color = '#888';
+        td.textContent = 'ユーザーが見つかりません';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+      for (const user of users) {
+        const tr = document.createElement('tr');
+        const cells = [
+          String(user.id),
+          user.login_id,
+          user.display_name,
+        ];
+        for (const text of cells) {
+          const td = document.createElement('td');
+          td.textContent = text;
+          tr.appendChild(td);
+        }
+        // Role badge
+        const roleTd = document.createElement('td');
+        const roleBadge = document.createElement('span');
+        roleBadge.className = 'badge badge-' + (user.role || 'user');
+        roleBadge.textContent = user.role || 'user';
+        roleTd.appendChild(roleBadge);
+        tr.appendChild(roleTd);
+        // Active badge
+        const activeTd = document.createElement('td');
+        const activeBadge = document.createElement('span');
+        activeBadge.className = 'badge badge-' + (user.is_active ? 'active' : 'inactive');
+        activeBadge.textContent = user.is_active ? '有効' : '無効';
+        activeTd.appendChild(activeBadge);
+        tr.appendChild(activeTd);
+        // Last login
+        const loginTd = document.createElement('td');
+        loginTd.textContent = (user.last_login_at || '').slice(0, 16).replace('T', ' ') || 'なし';
+        tr.appendChild(loginTd);
+        // Actions
+        const actionTd = document.createElement('td');
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+
+        const toggleActiveBtn = document.createElement('button');
+        toggleActiveBtn.className = 'btn ' + (user.is_active ? 'btn-sm-warning' : 'btn-sm-success');
+        toggleActiveBtn.textContent = user.is_active ? '無効化' : '有効化';
+        toggleActiveBtn.addEventListener('click', () => toggleActive(user));
+        actions.appendChild(toggleActiveBtn);
+
+        const toggleRoleBtn = document.createElement('button');
+        toggleRoleBtn.className = 'btn btn-sm-primary';
+        toggleRoleBtn.textContent = user.role === 'admin' ? '一般に変更' : '管理者に変更';
+        toggleRoleBtn.addEventListener('click', () => toggleRole(user));
+        actions.appendChild(toggleRoleBtn);
+
+        const resetPwBtn = document.createElement('button');
+        resetPwBtn.className = 'btn btn-sm-danger';
+        resetPwBtn.textContent = 'PW初期化';
+        resetPwBtn.addEventListener('click', () => resetPassword(user));
+        actions.appendChild(resetPwBtn);
+
+        actionTd.appendChild(actions);
+        tr.appendChild(actionTd);
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function toggleActive(user) {
+      try {
+        await api.adminSetActive({ target_user_id: user.id, is_active: user.is_active ? 0 : 1 });
+        showSuccess('更新しました');
+        await init();
+      } catch (e) {
+        showError('更新失敗: ' + (e.message || String(e)));
+      }
+    }
+
+    async function toggleRole(user) {
+      const newRole = user.role === 'admin' ? 'user' : 'admin';
+      try {
+        await api.adminSetRole({ target_user_id: user.id, role: newRole });
+        showSuccess('ロールを変更しました');
+        await init();
+      } catch (e) {
+        showError('変更失敗: ' + (e.message || String(e)));
+      }
+    }
+
+    async function resetPassword(user) {
+      try {
+        const res = await api.adminResetPassword(user.login_id);
+        const tempPw = (res.data && res.data.temp_password) ? res.data.temp_password : '';
+        document.getElementById('temp-pw').textContent = tempPw;
+        document.getElementById('pw-modal').classList.add('show');
+      } catch (e) {
+        showError('リセット失敗: ' + (e.message || String(e)));
+      }
+    }
+
+    document.getElementById('close-modal').addEventListener('click', () => {
+      document.getElementById('pw-modal').classList.remove('show');
+    });
+
+    function showSuccess(msg) {
+      const el = document.getElementById('success-msg');
+      el.style.display = 'block';
+      el.textContent = msg;
+      setTimeout(() => { el.style.display = 'none'; }, 3000);
+    }
+    function showError(msg) {
+      const el = document.getElementById('error-msg');
+      el.style.display = 'block';
+      el.textContent = msg;
+    }
+
+    init().catch(console.error);
+  </script>
+</body>
+</html>

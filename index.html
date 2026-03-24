@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>作業記録PWA - スマホで使える作業記録アプリ</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#1976d2">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #212121; }
+    header { background: #1976d2; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+    header h1 { font-size: 1.25rem; }
+    header a { color: #fff; text-decoration: none; font-size: 0.9rem; padding: 6px 12px; border: 1px solid rgba(255,255,255,0.6); border-radius: 4px; }
+    .hero { background: #1976d2; color: #fff; padding: 48px 24px; text-align: center; }
+    .hero h2 { font-size: 2rem; margin-bottom: 16px; }
+    .hero p { font-size: 1.1rem; opacity: 0.9; max-width: 600px; margin: 0 auto 32px; }
+    .btn { display: inline-block; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-size: 1rem; font-weight: 600; margin: 8px; }
+    .btn-primary { background: #fff; color: #1976d2; }
+    .btn-secondary { background: transparent; color: #fff; border: 2px solid #fff; }
+    .features { display: flex; flex-wrap: wrap; gap: 16px; max-width: 900px; margin: 40px auto; padding: 0 24px; }
+    .feature-card { flex: 1 1 200px; background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+    .feature-card .icon { font-size: 2rem; margin-bottom: 12px; }
+    .feature-card h3 { font-size: 1.05rem; margin-bottom: 8px; color: #1976d2; }
+    .feature-card p { font-size: 0.9rem; color: #555; line-height: 1.6; }
+    .adsense { max-width: 900px; margin: 16px auto; padding: 0 24px; }
+    .adsense-placeholder { background: #e8e8e8; border: 1px dashed #bbb; padding: 24px; text-align: center; color: #888; border-radius: 4px; }
+    .links { max-width: 900px; margin: 16px auto 40px; padding: 0 24px; display: flex; flex-wrap: wrap; gap: 12px; }
+    .links a { color: #1976d2; text-decoration: none; font-size: 0.9rem; }
+    .links a:hover { text-decoration: underline; }
+    footer { background: #212121; color: #ccc; padding: 24px; text-align: center; font-size: 0.85rem; }
+    footer a { color: #90caf9; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>作業記録PWA</h1>
+    <a href="/pages/home.html">ホームへ</a>
+  </header>
+
+  <section class="hero">
+    <h2>スマホで素早く作業記録</h2>
+    <p>設備点検・修理・トラブル対応をオフラインでも記録。QRコードで設備を瞬時に特定。クラウドに自動同期。</p>
+    <a href="/pages/login.html" class="btn btn-primary">ログイン</a>
+    <a href="/pages/register.html" class="btn btn-secondary">新規登録</a>
+  </section>
+
+  <section class="features">
+    <div class="feature-card">
+      <div class="icon">📱</div>
+      <h3>スマホ最適化</h3>
+      <p>現場での入力に最適化されたモバイルファーストUI。大きなボタンで手袋でも操作しやすい。</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">📵</div>
+      <h3>オフライン対応</h3>
+      <p>電波のない現場でも記録可能。通信が回復したとき自動でサーバーに同期されます。</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">📷</div>
+      <h3>QRコード読取</h3>
+      <p>設備のQRコードをカメラで読み取るだけで、設備情報を自動入力。記録ミスを防ぎます。</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">☁️</div>
+      <h3>クラウド同期</h3>
+      <p>複数デバイス間でデータを共有。コンフリクト検出と解決機能で安全にデータを管理。</p>
+    </div>
+  </section>
+
+  <!-- AdSense -->
+  <div class="adsense">
+    <div class="adsense-placeholder">
+      <!-- AdSense -->
+      広告エリア
+    </div>
+  </div>
+
+  <div class="links">
+    <a href="/guide/">利用ガイド</a>
+    <a href="/privacy-policy/">プライバシーポリシー</a>
+    <a href="/contact/">お問い合わせ</a>
+    <a href="/terms/">利用規約</a>
+  </div>
+
+  <footer>
+    <p>&copy; 2024 作業記録PWA. All rights reserved.</p>
+    <p style="margin-top:8px;">
+      <a href="/privacy-policy/">プライバシーポリシー</a> ·
+      <a href="/terms/">利用規約</a> ·
+      <a href="/contact/">お問い合わせ</a>
+    </p>
+  </footer>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

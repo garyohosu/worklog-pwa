@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ログイン - 作業記録PWA</title>
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #212121; min-height: 100vh; display: flex; flex-direction: column; }
+    header { background: #1976d2; color: #fff; padding: 16px 24px; }
+    header h1 { font-size: 1.2rem; }
+    main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .card { background: #fff; border-radius: 8px; padding: 32px 24px; width: 100%; max-width: 400px; box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+    .card h2 { font-size: 1.4rem; margin-bottom: 24px; color: #1976d2; }
+    .form-group { margin-bottom: 18px; }
+    label { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 6px; color: #333; }
+    input { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; outline: none; transition: border-color 0.2s; }
+    input:focus { border-color: #1976d2; box-shadow: 0 0 0 2px rgba(25,118,210,0.15); }
+    .btn-submit { width: 100%; padding: 14px; background: #1976d2; color: #fff; border: none; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 8px; }
+    .btn-submit:hover { background: #1565c0; }
+    .btn-submit:active { background: #0d47a1; }
+    #error-msg { display: none; background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; border-radius: 6px; padding: 12px; margin-bottom: 16px; font-size: 0.9rem; }
+    .links { margin-top: 20px; text-align: center; font-size: 0.9rem; }
+    .links a { color: #1976d2; text-decoration: none; }
+    .links a:hover { text-decoration: underline; }
+    footer { padding: 16px; text-align: center; font-size: 0.8rem; color: #888; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><a href="/index.html" style="color:#fff;text-decoration:none;">作業記録PWA</a></h1>
+  </header>
+  <main>
+    <div class="card">
+      <h2>ログイン</h2>
+      <div id="error-msg" role="alert"></div>
+      <form id="login-form" novalidate>
+        <div class="form-group">
+          <label for="login-id">ログインID</label>
+          <input type="text" id="login-id" name="login_id" autocomplete="username" placeholder="ログインIDを入力" required>
+        </div>
+        <div class="form-group">
+          <label for="password">パスワード</label>
+          <input type="password" id="password" name="password" autocomplete="current-password" placeholder="パスワードを入力" required>
+        </div>
+        <button type="submit" class="btn-submit">ログイン</button>
+      </form>
+      <div class="links">
+        <p>アカウントをお持ちでない方は<a href="/pages/register.html">新規登録</a></p>
+      </div>
+    </div>
+  </main>
+  <footer>
+    <a href="/privacy-policy/">プライバシーポリシー</a> · <a href="/terms/">利用規約</a>
+  </footer>
+  <script type="module" src="/js/auth-ui.js"></script>
+</body>
+</html>

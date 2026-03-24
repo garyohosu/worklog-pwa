@@ -1,0 +1,23 @@
+{
+  "name": "worklog-pwa",
+  "version": "1.0.0",
+  "description": "PWA work log app",
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "jest-environment-jsdom": "^29.0.0",
+    "fake-indexeddb": "^5.0.0"
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "testMatch": [
+      "**/js/__tests__/**/*.test.js"
+    ],
+    "transform": {}
+  }
+}

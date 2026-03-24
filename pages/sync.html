@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>同期管理 - 作業記録PWA</title>
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #212121; }
+    header { background: #1976d2; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+    header a { color: #fff; text-decoration: none; font-size: 1.4rem; }
+    header h1 { font-size: 1.1rem; }
+    main { max-width: 700px; margin: 0 auto; padding: 20px 16px; }
+    .summary-card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }
+    .summary-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+    .summary-item { flex: 1; min-width: 80px; text-align: center; }
+    .summary-item .count { font-size: 1.8rem; font-weight: 700; }
+    .summary-item .count.pending { color: #f57c00; }
+    .summary-item .count.failed { color: #d32f2f; }
+    .summary-item .count.conflict { color: #7b1fa2; }
+    .summary-item .label { font-size: 0.8rem; color: #666; margin-top: 4px; }
+    .btn { padding: 11px 20px; border-radius: 6px; border: none; cursor: pointer; font-size: 0.9rem; font-weight: 600; }
+    .btn-primary { background: #1976d2; color: #fff; }
+    .btn-primary:hover { background: #1565c0; }
+    .btn-warning { background: #f57c00; color: #fff; }
+    .btn-warning:hover { background: #e65100; }
+    .section-title { font-size: 1rem; font-weight: 600; margin-bottom: 10px; }
+    .queue-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+    .queue-item { background: #fff; border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; }
+    .queue-item .item-info { flex: 1; }
+    .queue-item .item-id { font-size: 0.8rem; color: #888; font-family: monospace; }
+    .queue-item .item-op { font-weight: 600; font-size: 0.9rem; }
+    .badge { padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+    .badge-pending { background: #fff3e0; color: #e65100; }
+    .badge-failed { background: #ffebee; color: #c62828; }
+    .badge-conflict { background: #f3e5f5; color: #6a1b9a; }
+    .badge-done { background: #e8f5e9; color: #2e7d32; }
+    .badge-retrying { background: #e3f2fd; color: #1565c0; }
+    .empty-state { text-align: center; padding: 24px; color: #888; font-size: 0.9rem; }
+    #sync-status { font-size: 0.85rem; color: #555; margin-left: 12px; }
+    #error-msg { display: none; background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/pages/home.html">&#8592;</a>
+    <h1>同期管理</h1>
+  </header>
+  <main>
+    <div id="error-msg" role="alert"></div>
+
+    <div class="summary-card">
+      <div class="summary-row">
+        <div class="summary-item">
+          <div class="count pending" id="pending-count">-</div>
+          <div class="label">未送信</div>
+        </div>
+        <div class="summary-item">
+          <div class="count failed" id="failed-count">-</div>
+          <div class="label">エラー</div>
+        </div>
+        <div class="summary-item">
+          <div class="count conflict" id="conflict-count">-</div>
+          <div class="label">競合</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+        <button class="btn btn-primary" id="sync-btn">今すぐ同期</button>
+        <button class="btn btn-warning" id="retry-btn">エラーを再送</button>
+        <span id="sync-status"></span>
+      </div>
+    </div>
+
+    <div id="pending-section">
+      <div class="section-title">未送信・エラー</div>
+      <div id="pending-list" class="queue-list">
+        <div class="empty-state">読み込み中...</div>
+      </div>
+    </div>
+
+    <div id="conflict-section">
+      <div class="section-title">競合（手動解決が必要）</div>
+      <div id="conflict-list" class="queue-list">
+        <div class="empty-state">読み込み中...</div>
+      </div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { API_BASE_URL, SESSION_TOKEN_KEY } from '/js/config.js';
+    import { ApiClient } from '/js/lib/api-client.js';
+    import { LocalDB } from '/js/lib/db-local.js';
+    import { SyncEngine } from '/js/lib/sync-engine.js';
+
+    const token = sessionStorage.getItem(SESSION_TOKEN_KEY) || localStorage.getItem(SESSION_TOKEN_KEY);
+    if (!token) { location.href = '/pages/login.html'; }
+
+    const api = new ApiClient(API_BASE_URL, () => token);
+    const db = new LocalDB();
+
+    async function init() {
+      await db.open();
+      await refresh();
+    }
+
+    async function refresh() {
+      const pending = await db.getPendingQueue();
+      const conflict = await db.getConflictQueue();
+      const failed = pending.filter(i => i.status === 'failed');
+
+      document.getElementById('pending-count').textContent = pending.filter(i => i.status === 'pending').length;
+      document.getElementById('failed-count').textContent = failed.length;
+      document.getElementById('conflict-count').textContent = conflict.length;
+
+      renderQueue('pending-list', pending);
+      renderQueue('conflict-list', conflict);
+    }
+
+    function renderQueue(containerId, items) {
+      const container = document.getElementById(containerId);
+      container.textContent = '';
+      if (items.length === 0) {
+        const el = document.createElement('div');
+        el.className = 'empty-state';
+        el.textContent = 'なし';
+        container.appendChild(el);
+        return;
+      }
+      for (const item of items) {
+        const el = document.createElement('div');
+        el.className = 'queue-item';
+        const info = document.createElement('div');
+        info.className = 'item-info';
+        const op = document.createElement('div');
+        op.className = 'item-op';
+        op.textContent = item.operation || '';
+        const id = document.createElement('div');
+        id.className = 'item-id';
+        id.textContent = item.entity_id || '';
+        info.appendChild(op);
+        info.appendChild(id);
+        const badge = document.createElement('span');
+        badge.className = 'badge badge-' + (item.status || 'pending');
+        badge.textContent = item.status || '';
+        el.appendChild(info);
+        el.appendChild(badge);
+        container.appendChild(el);
+      }
+    }
+
+    document.getElementById('sync-btn').addEventListener('click', async () => {
+      const statusEl = document.getElementById('sync-status');
+      statusEl.textContent = '同期中...';
+      try {
+        const engine = new SyncEngine(db, api);
+        await engine.sync();
+        statusEl.textContent = '同期完了';
+        await refresh();
+      } catch (e) {
+        statusEl.textContent = '同期失敗: ' + (e.message || String(e));
+      }
+    });
+
+    document.getElementById('retry-btn').addEventListener('click', async () => {
+      const statusEl = document.getElementById('sync-status');
+      statusEl.textContent = '再送中...';
+      try {
+        const engine = new SyncEngine(db, api);
+        await engine.pushPending();
+        statusEl.textContent = '再送完了';
+        await refresh();
+      } catch (e) {
+        statusEl.textContent = '再送失敗: ' + (e.message || String(e));
+      }
+    });
+
+    init().catch(console.error);
+  </script>
+</body>
+</html>

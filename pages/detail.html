@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>記録詳細 - 作業記録PWA</title>
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #212121; }
+    header { background: #1976d2; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+    header a { color: #fff; text-decoration: none; font-size: 1.4rem; }
+    header h1 { font-size: 1.1rem; }
+    main { max-width: 700px; margin: 0 auto; padding: 20px 16px; }
+    .card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }
+    .field { margin-bottom: 16px; }
+    .field-label { font-size: 0.8rem; font-weight: 700; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .field-value { font-size: 1rem; color: #212121; line-height: 1.5; white-space: pre-wrap; }
+    .field-value.empty { color: #aaa; font-style: italic; }
+    .badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; }
+    .badge-open { background: #e3f2fd; color: #1565c0; }
+    .badge-in_progress { background: #fff3e0; color: #e65100; }
+    .badge-done { background: #e8f5e9; color: #2e7d32; }
+    .badge-draft { background: #f3e5f5; color: #6a1b9a; }
+    .badge-pending_parts { background: #fce4ec; color: #ad1457; }
+    .badge-inspection { background: #e0f2f1; color: #00695c; }
+    .badge-repair { background: #fce4ec; color: #880e4f; }
+    .badge-trouble { background: #ffebee; color: #b71c1c; }
+    .badge-maintenance { background: #e8f5e9; color: #1b5e20; }
+    .badge-memo { background: #f5f5f5; color: #424242; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .btn { padding: 12px 20px; border-radius: 6px; border: none; cursor: pointer; font-size: 0.95rem; font-weight: 600; text-decoration: none; display: inline-block; }
+    .btn-primary { background: #1976d2; color: #fff; }
+    .btn-primary:hover { background: #1565c0; }
+    .btn-danger { background: #d32f2f; color: #fff; }
+    .btn-danger:hover { background: #b71c1c; }
+    .btn-outline { background: #fff; color: #555; border: 1px solid #ccc; }
+    .adsense { margin: 16px 0; }
+    .adsense-placeholder { background: #e8e8e8; border: 1px dashed #bbb; padding: 18px; text-align: center; color: #888; border-radius: 4px; font-size: 0.85rem; }
+    #error-msg { display: none; background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+    #confirm-dialog { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; }
+    #confirm-dialog.show { display: flex; }
+    .dialog-box { background: #fff; border-radius: 8px; padding: 24px; max-width: 360px; width: 90%; }
+    .dialog-box h3 { margin-bottom: 12px; }
+    .dialog-box p { margin-bottom: 20px; font-size: 0.95rem; color: #555; }
+    .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/pages/list.html">&#8592;</a>
+    <h1>記録詳細</h1>
+  </header>
+  <main>
+    <div id="error-msg" role="alert"></div>
+    <div id="detail-content">
+      <div style="text-align:center;padding:40px;color:#888;">読み込み中...</div>
+    </div>
+
+    <!-- AdSense -->
+    <div class="adsense">
+      <div class="adsense-placeholder"><!-- AdSense -->広告エリア</div>
+    </div>
+  </main>
+
+  <div id="confirm-dialog" role="dialog" aria-modal="true">
+    <div class="dialog-box">
+      <h3>削除の確認</h3>
+      <p>この記録を削除しますか？削除後もオフラインキャッシュに残り、同期時にサーバーから削除されます。</p>
+      <div class="dialog-actions">
+        <button class="btn btn-outline" id="cancel-delete">キャンセル</button>
+        <button class="btn btn-danger" id="confirm-delete">削除する</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { API_BASE_URL, SESSION_TOKEN_KEY } from '/js/config.js';
+    import { LocalDB } from '/js/lib/db-local.js';
+
+    const token = sessionStorage.getItem(SESSION_TOKEN_KEY) || localStorage.getItem(SESSION_TOKEN_KEY);
+    if (!token) { location.href = '/pages/login.html'; }
+
+    const params = new URLSearchParams(location.search);
+    const uuid = params.get('uuid');
+    if (!uuid) { location.href = '/pages/list.html'; }
+
+    const db = new LocalDB();
+    let currentRecord = null;
+
+    const TYPE_LABELS = { inspection: '点検', repair: '修理', trouble: 'トラブル', maintenance: 'メンテ', memo: 'メモ' };
+    const STATUS_LABELS = { draft: '下書き', open: '未対応', in_progress: '対応中', done: '完了', pending_parts: '部品待ち' };
+    const PRIORITY_LABELS = { low: '低', medium: '中', high: '高', critical: '緊急' };
+
+    function renderValue(v, emptyText = '(未設定)') {
+      const el = document.createElement('div');
+      el.className = 'field-value' + (v ? '' : ' empty');
+      el.textContent = v || emptyText;
+      return el;
+    }
+
+    function renderField(label, value) {
+      const field = document.createElement('div');
+      field.className = 'field';
+      const l = document.createElement('div');
+      l.className = 'field-label';
+      l.textContent = label;
+      field.appendChild(l);
+      field.appendChild(typeof value === 'string' ? renderValue(value) : value);
+      return field;
+    }
+
+    async function render(record) {
+      const content = document.getElementById('detail-content');
+      content.textContent = '';
+
+      const card = document.createElement('div');
+      card.className = 'card';
+
+      // Title
+      const titleField = renderField('タイトル', record.title);
+      card.appendChild(titleField);
+
+      // Status / Type badges
+      const statusRow = document.createElement('div');
+      statusRow.className = 'field';
+      const statusLabel = document.createElement('div');
+      statusLabel.className = 'field-label';
+      statusLabel.textContent = '状態 / 種別';
+      const statusValue = document.createElement('div');
+      statusValue.className = 'field-value';
+      const statusBadge = document.createElement('span');
+      statusBadge.className = 'badge badge-' + (record.status || 'draft');
+      statusBadge.textContent = STATUS_LABELS[record.status] || record.status || '';
+      const typeBadge = document.createElement('span');
+      typeBadge.className = 'badge badge-' + (record.record_type || 'memo');
+      typeBadge.style.marginLeft = '8px';
+      typeBadge.textContent = TYPE_LABELS[record.record_type] || record.record_type || '';
+      statusValue.appendChild(statusBadge);
+      statusValue.appendChild(typeBadge);
+      statusRow.appendChild(statusLabel);
+      statusRow.appendChild(statusValue);
+      card.appendChild(statusRow);
+
+      card.appendChild(renderField('記録日時', (record.recorded_at || '').replace('T', ' ').slice(0, 16)));
+      card.appendChild(renderField('優先度', PRIORITY_LABELS[record.priority] || record.priority || '(未設定)'));
+      card.appendChild(renderField('症状', record.symptom));
+      card.appendChild(renderField('作業内容', record.work_detail));
+      card.appendChild(renderField('結果', record.result));
+
+      if (record.needs_followup) {
+        card.appendChild(renderField('フォローアップ期限', record.followup_due || '(未設定)'));
+      }
+
+      content.appendChild(card);
+
+      // Actions
+      const actionsCard = document.createElement('div');
+      actionsCard.className = 'card';
+      actionsCard.style.display = 'flex';
+      actionsCard.style.gap = '10px';
+      actionsCard.style.flexWrap = 'wrap';
+
+      const editBtn = document.createElement('a');
+      editBtn.className = 'btn btn-primary';
+      editBtn.href = '/pages/edit.html?uuid=' + encodeURIComponent(record.log_uuid);
+      editBtn.textContent = '編集';
+      actionsCard.appendChild(editBtn);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'btn btn-danger';
+      deleteBtn.textContent = '削除';
+      deleteBtn.addEventListener('click', () => {
+        document.getElementById('confirm-dialog').classList.add('show');
+      });
+      actionsCard.appendChild(deleteBtn);
+
+      const backBtn = document.createElement('a');
+      backBtn.className = 'btn btn-outline';
+      backBtn.href = '/pages/list.html';
+      backBtn.textContent = '一覧に戻る';
+      actionsCard.appendChild(backBtn);
+
+      content.appendChild(actionsCard);
+    }
+
+    async function init() {
+      await db.open();
+      const record = await db.getWorkLog(uuid);
+      if (!record) {
+        const errEl = document.getElementById('error-msg');
+        errEl.style.display = 'block';
+        errEl.textContent = '記録が見つかりません。';
+        return;
+      }
+      currentRecord = record;
+      await render(record);
+    }
+
+    document.getElementById('cancel-delete').addEventListener('click', () => {
+      document.getElementById('confirm-dialog').classList.remove('show');
+    });
+
+    document.getElementById('confirm-delete').addEventListener('click', async () => {
+      document.getElementById('confirm-dialog').classList.remove('show');
+      if (!currentRecord) return;
+      try {
+        // Mark as deleted locally and add to sync queue
+        await db.upsertWorkLog({ ...currentRecord, deleted_flag: 1, sync_state: 'pending' });
+        await db.addToQueue({
+          entity_id: currentRecord.log_uuid,
+          operation: 'delete',
+          status: 'pending',
+          payload: { base_revision: currentRecord.revision },
+        });
+        location.href = '/pages/list.html';
+      } catch (e) {
+        const errEl = document.getElementById('error-msg');
+        errEl.style.display = 'block';
+        errEl.textContent = '削除に失敗しました: ' + (e.message || String(e));
+      }
+    });
+
+    init().catch(console.error);
+  </script>
+</body>
+</html>

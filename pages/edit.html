@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>記録編集 - 作業記録PWA</title>
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #212121; }
+    header { background: #1976d2; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+    header a { color: #fff; text-decoration: none; font-size: 1.4rem; }
+    header h1 { font-size: 1.1rem; }
+    main { max-width: 700px; margin: 0 auto; padding: 20px 16px; }
+    .card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }
+    .form-group { margin-bottom: 18px; }
+    label { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 6px; color: #333; }
+    input, select, textarea { width: 100%; padding: 11px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.95rem; outline: none; font-family: inherit; }
+    input:focus, select:focus, textarea:focus { border-color: #1976d2; box-shadow: 0 0 0 2px rgba(25,118,210,0.15); }
+    textarea { min-height: 90px; resize: vertical; }
+    .required { color: #d32f2f; }
+    .form-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .form-row .form-group { flex: 1; min-width: 130px; }
+    .checkbox-group { display: flex; align-items: center; gap: 8px; }
+    .checkbox-group input[type="checkbox"] { width: auto; padding: 0; }
+    .qr-section { display: flex; gap: 8px; align-items: flex-end; }
+    .qr-section input { flex: 1; }
+    .btn { padding: 12px 22px; border-radius: 6px; border: none; cursor: pointer; font-size: 0.95rem; font-weight: 600; text-decoration: none; display: inline-block; }
+    .btn-primary { background: #1976d2; color: #fff; }
+    .btn-primary:hover { background: #1565c0; }
+    .btn-outline { background: #fff; color: #555; border: 1px solid #ccc; }
+    .btn-qr { background: #37474f; color: #fff; padding: 11px 14px; font-size: 0.85rem; white-space: nowrap; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    #error-msg { display: none; background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+    #success-msg { display: none; background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="javascript:history.back()">&#8592;</a>
+    <h1 id="page-title">新規記録</h1>
+  </header>
+  <main>
+    <div id="error-msg" role="alert"></div>
+    <div id="success-msg" role="status"></div>
+
+    <form id="edit-form" novalidate>
+      <div class="card">
+        <div class="form-group">
+          <label for="title">タイトル <span class="required">*</span></label>
+          <input type="text" id="title" name="title" placeholder="作業タイトルを入力" required>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="record-type">種別 <span class="required">*</span></label>
+            <select id="record-type" name="record_type" required>
+              <option value="inspection">点検</option>
+              <option value="repair">修理</option>
+              <option value="trouble">トラブル</option>
+              <option value="maintenance">メンテ</option>
+              <option value="memo">メモ</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="status">状態 <span class="required">*</span></label>
+            <select id="status" name="status" required>
+              <option value="draft">下書き</option>
+              <option value="open">未対応</option>
+              <option value="in_progress">対応中</option>
+              <option value="done">完了</option>
+              <option value="pending_parts">部品待ち</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="priority">優先度</label>
+            <select id="priority" name="priority">
+              <option value="">未設定</option>
+              <option value="low">低</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
+              <option value="critical">緊急</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="recorded-at">記録日時 <span class="required">*</span></label>
+          <input type="datetime-local" id="recorded-at" name="recorded_at" required>
+        </div>
+
+        <div class="form-group">
+          <label>設備</label>
+          <div class="qr-section">
+            <input type="text" id="equipment-id" name="equipment_id" placeholder="設備ID（数値）">
+            <button type="button" class="btn btn-qr" id="qr-btn">QR読取</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="form-group">
+          <label for="symptom">症状・状況</label>
+          <textarea id="symptom" name="symptom" placeholder="症状や状況を記入"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="work-detail">作業内容</label>
+          <textarea id="work-detail" name="work_detail" placeholder="実施した作業内容を記入"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="result">結果・所見</label>
+          <textarea id="result" name="result" placeholder="作業結果・所見を記入"></textarea>
+        </div>
+
+        <div class="form-group">
+          <div class="checkbox-group">
+            <input type="checkbox" id="needs-followup" name="needs_followup">
+            <label for="needs-followup" style="margin-bottom:0;">フォローアップが必要</label>
+          </div>
+        </div>
+
+        <div class="form-group" id="followup-due-group" style="display:none;">
+          <label for="followup-due">フォローアップ期限</label>
+          <input type="date" id="followup-due" name="followup_due">
+        </div>
+      </div>
+
+      <div class="card actions">
+        <button type="submit" class="btn btn-primary" id="save-btn">保存する</button>
+        <a href="javascript:history.back()" class="btn btn-outline">キャンセル</a>
+      </div>
+    </form>
+  </main>
+
+  <script type="module">
+    import { API_BASE_URL, SESSION_TOKEN_KEY } from '/js/config.js';
+    import { LocalDB } from '/js/lib/db-local.js';
+    import { validateTitle, validateRecordType, validateStatus, validatePriority } from '/js/lib/validator.js';
+
+    const token = sessionStorage.getItem(SESSION_TOKEN_KEY) || localStorage.getItem(SESSION_TOKEN_KEY);
+    if (!token) { location.href = '/pages/login.html'; }
+
+    const params = new URLSearchParams(location.search);
+    const editUuid = params.get('uuid');
+    const isEdit = !!editUuid;
+
+    const db = new LocalDB();
+    let existingRecord = null;
+
+    function generateUuid() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+      });
+    }
+
+    function getFormData() {
+      const now = new Date().toISOString().slice(0, 16);
+      return {
+        title: document.getElementById('title').value.trim(),
+        record_type: document.getElementById('record-type').value,
+        status: document.getElementById('status').value,
+        priority: document.getElementById('priority').value || null,
+        recorded_at: (document.getElementById('recorded-at').value || now) + ':00Z',
+        equipment_id: document.getElementById('equipment-id').value ? parseInt(document.getElementById('equipment-id').value, 10) : null,
+        symptom: document.getElementById('symptom').value.trim() || null,
+        work_detail: document.getElementById('work-detail').value.trim() || null,
+        result: document.getElementById('result').value.trim() || null,
+        needs_followup: document.getElementById('needs-followup').checked ? 1 : 0,
+        followup_due: document.getElementById('needs-followup').checked ? (document.getElementById('followup-due').value || null) : null,
+      };
+    }
+
+    async function init() {
+      await db.open();
+      // Set default datetime
+      const now = new Date();
+      const local = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      document.getElementById('recorded-at').value = local;
+
+      if (isEdit) {
+        document.getElementById('page-title').textContent = '記録編集';
+        existingRecord = await db.getWorkLog(editUuid);
+        if (existingRecord) {
+          document.getElementById('title').value = existingRecord.title || '';
+          document.getElementById('record-type').value = existingRecord.record_type || 'inspection';
+          document.getElementById('status').value = existingRecord.status || 'draft';
+          document.getElementById('priority').value = existingRecord.priority || '';
+          if (existingRecord.recorded_at) {
+            document.getElementById('recorded-at').value = existingRecord.recorded_at.slice(0, 16);
+          }
+          document.getElementById('equipment-id').value = existingRecord.equipment_id || '';
+          document.getElementById('symptom').value = existingRecord.symptom || '';
+          document.getElementById('work-detail').value = existingRecord.work_detail || '';
+          document.getElementById('result').value = existingRecord.result || '';
+          document.getElementById('needs-followup').checked = !!existingRecord.needs_followup;
+          if (existingRecord.needs_followup) {
+            document.getElementById('followup-due-group').style.display = '';
+            document.getElementById('followup-due').value = existingRecord.followup_due || '';
+          }
+        }
+      }
+    }
+
+    document.getElementById('needs-followup').addEventListener('change', (e) => {
+      document.getElementById('followup-due-group').style.display = e.target.checked ? '' : 'none';
+    });
+
+    document.getElementById('qr-btn').addEventListener('click', () => {
+      alert('QRコード読取機能は現在実装中です。');
+    });
+
+    document.getElementById('edit-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById('error-msg');
+      errEl.style.display = 'none';
+
+      const fields = getFormData();
+
+      // Validate
+      const errors = [
+        validateTitle(fields.title),
+        validateRecordType(fields.record_type),
+        validateStatus(fields.status),
+        validatePriority(fields.priority),
+      ].filter(Boolean);
+
+      if (errors.length > 0) {
+        errEl.style.display = 'block';
+        errEl.textContent = errors.join(' / ');
+        return;
+      }
+
+      try {
+        if (isEdit && existingRecord) {
+          // Update
+          const updated = { ...existingRecord, ...fields, sync_state: 'pending' };
+          await db.upsertWorkLog(updated);
+          await db.addToQueue({
+            entity_id: existingRecord.log_uuid,
+            operation: 'update',
+            status: 'pending',
+            payload: { base_revision: existingRecord.revision, fields },
+          });
+          const successEl = document.getElementById('success-msg');
+          successEl.style.display = 'block';
+          successEl.textContent = '保存しました（次回同期時にサーバーへ送信されます）';
+          setTimeout(() => { location.href = '/pages/detail.html?uuid=' + encodeURIComponent(existingRecord.log_uuid); }, 1000);
+        } else {
+          // Create
+          const logUuid = generateUuid();
+          const now = new Date().toISOString().replace('T', ' ').slice(0, 19) + 'Z';
+          const newRecord = {
+            log_uuid: logUuid,
+            ...fields,
+            sync_state: 'pending',
+            deleted_flag: 0,
+            revision: 1,
+            server_updated_at: now,
+          };
+          await db.upsertWorkLog(newRecord);
+          await db.addToQueue({
+            entity_id: logUuid,
+            operation: 'create',
+            status: 'pending',
+            payload: { fields: { log_uuid: logUuid, ...fields } },
+          });
+          const successEl = document.getElementById('success-msg');
+          successEl.style.display = 'block';
+          successEl.textContent = '記録を作成しました（次回同期時にサーバーへ送信されます）';
+          setTimeout(() => { location.href = '/pages/detail.html?uuid=' + encodeURIComponent(logUuid); }, 1000);
+        }
+      } catch (err) {
+        errEl.style.display = 'block';
+        errEl.textContent = '保存に失敗しました: ' + (err.message || String(err));
+      }
+    });
+
+    init().catch(console.error);
+  </script>
+</body>
+</html>
