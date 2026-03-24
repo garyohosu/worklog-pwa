@@ -580,7 +580,7 @@ IndexedDB に以下を保存する。
 }
 ```
 
-### sync_push
+### sync_push request
 ```json
 {
   "items": [
@@ -598,6 +598,21 @@ IndexedDB に以下を保存する。
 }
 ```
 
+### sync_push response
+個別アイテムごとの成否を返す。
+```json
+{
+  "status": "ok",
+  "data": {
+    "results": [
+      { "log_uuid": "A001", "status": "ok", "revision": 3 },
+      { "log_uuid": "A002", "status": "conflict", "server_revision": 5 },
+      { "log_uuid": "A003", "status": "error", "message": "validation error" }
+    ]
+  }
+}
+```
+
 ### sync_pull request
 `GET /api/worklog_api.cgi?action=sync_pull&since_token=2026-03-24T00:00:00Z`
 
@@ -612,7 +627,11 @@ IndexedDB に以下を保存する。
 }
 ```
 
-`since_token` はサーバー側変更日時の UTC 文字列を使う。競合判定は `revision`、差分取得は `since_token` に役割を分ける。
+### 差分取得ロジック（since_token）
+- サーバーは `server_updated_at >= since_token`（以上）の条件で検索する。
+- `next_since_token` は、返却アイテム群の `server_updated_at` の最大値とする（空なら `since_token` を維持）。
+- クライアントは同一秒内の重複取得を許容し、`log_uuid` に基づく upsert で重複排除を行う。
+- 競合判定は `revision`、差分取得は `since_token` に役割を分ける。
 
 ## 11.7 API レスポンス形式
 JSON で統一する。
@@ -672,10 +691,10 @@ Authorization: Bearer <session_token>
 
 以下を必須とする。
 
-- パスワード平文保存禁止（bcrypt ハッシュのみ保存）
+- パスワード平文保存禁止（bcrypt ハッシュのみ保存、8文字以上必須）
 - 認証なし更新禁止
 - 他人の記録を勝手に取得不可
-- セッション期限あり（7日）
+- セッション期限あり（7日、最終操作から延長されるスライディング方式）
 - HTTPS 利用
 - CORS は許可オリジン限定（`https://garyohosu.github.io` / `http://localhost` / `http://127.0.0.1`）
 - 管理機能は role チェック必須
