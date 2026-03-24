@@ -54,7 +54,7 @@ graph LR
 
   subgraph WL["作業記録管理"]
     C("作業記録 新規作成")
-    LST("作業記録 一覧表示\n50件ページネーション\nUser=自分の記録のみ")
+    LST("作業記録 一覧表示\n50件ページネーション")
     LSTF("削除済みフィルタ\n「削除済みを含める」\n「削除済みのみ表示」")
     DT("作業記録 詳細表示")
     ED("作業記録 編集")
@@ -71,19 +71,22 @@ graph LR
   User --> DEL
   User --> FU
 
+  Admin --> C
   Admin --> LST
   Admin --> LSTF
   Admin --> DT
+  Admin --> ED
   Admin --> ST
+  Admin --> DEL
   Admin --> FU
 
   LST --> LSTF
   LSTF -. "Admin のみ利用可\n専用ゴミ箱ページは作らない" .-> LSTF
-  C -. "equipment_id=NULL 許可\n(memoなど)" .-> C
-  DEL -. "tombstone同期\nrevision+1\ndeleted_at/deleted_by記録" .-> DEL
+  LST -. "User=自分の記録のみ\nAdmin=全ユーザーの記録" .-> LST
+  C -. "equipment_id=NULL 許可（memoなど）\nuser_id=作成者本人\ncreated_by/updated_by=操作者" .-> C
+  ED -. "Admin は全ユーザーの記録を編集可\nupdated_by=Admin 自身" .-> ED
+  DEL -. "tombstone同期 revision+1\ndeleted_at/deleted_by記録\nAdmin は全記録を削除可" .-> DEL
 ```
-
-> Admin の作業記録「作成・編集・削除」可否は Q42 で確認中。
 
 ---
 
@@ -109,23 +112,24 @@ graph LR
 
   Admin --> EL
   Admin --> ES
+  Admin --> QR
+  Admin --> NS
   Admin --> EM
 
   QR -. "qr_value（設備コード文字列）と照合\n未登録+オンライン→by_qr問い合わせ\n未登録+オフライン→「設備未登録または未同期」表示" .-> QR
-  EM -. "初期はDB直接投入または変換スクリプト\nMVP後に equipment_import.cgi 追加予定" .-> EM
+  EM -. "初期はDB直接投入または変換スクリプト\nMVP後に equipment_import.cgi 追加予定\n管理系操作なのでオンライン必須" .-> EM
 ```
-
-> Admin の QR 読取・設備なし選択の可否は Q43 で確認中。
 
 ---
 
-## 4. オフライン・同期
+## 4. オフライン・同期（作業記録系）
 
 ```mermaid
 graph LR
   User(["👤 User"])
+  Admin(["👤 Admin"])
 
-  subgraph SYNC["オフライン・同期"]
+  subgraph SYNC["オフライン・同期（作業記録系）"]
     OD("オフライン\n下書き保存")
     SP("同期 Push\nローカル→サーバー\nsync_queue送信")
     SL("同期 Pull（記録）\nサーバー→ローカル\nsinceToken差分")
@@ -142,6 +146,13 @@ graph LR
   User --> CC
   User --> RT
 
+  Admin --> OD
+  Admin --> SP
+  Admin --> SL
+  Admin --> EMS
+  Admin --> CC
+  Admin --> RT
+
   SP -. "base_revision送信\n不一致→409 Conflict\n→sync_queue.status=conflict" .-> CC
   SL -. "tombstone(削除済)も取得\nupsertで重複排除" .-> SL
   EMS -. "ログイン時: 自動差分同期\n同期ボタン時: 差分同期\nQR読取前: ローカルキャッシュ使用" .-> EMS
@@ -150,17 +161,15 @@ graph LR
   OD -. "オフライン中は同期しない\nセッション期限切れでも\n下書き継続可能" .-> OD
 ```
 
-> Admin のオフライン・同期使用可否は Q44 で確認中。
-
 ---
 
-## 5. 管理者専用機能
+## 5. 管理者専用機能（オンライン必須）
 
 ```mermaid
 graph LR
   Admin(["👤 Admin"])
 
-  subgraph ADMUSECASE["管理者専用機能"]
+  subgraph ADMUSECASE["管理者専用機能（オンライン必須）"]
     UM("ユーザー管理")
     UML("ユーザー一覧表示")
     UMA("is_active 変更\n有効化 / 無効化")
@@ -199,9 +208,9 @@ graph TB
     A1["認証・アカウント管理"]
     A2["作業記録管理"]
     A3["設備・QR"]
-    A4["オフライン・同期"]
-    A5["管理者専用機能"]
-    A6["公開ページ\nトップ・固定ページ"]
+    A4["オフライン・同期\n（作業記録系）"]
+    A5["管理者専用機能\n（オンライン必須）"]
+    A6["公開ページ\nトップ・/guide/・固定ページ"]
   end
 
   Guest --> A1
@@ -213,14 +222,13 @@ graph TB
   Admin --> A1
   Admin --> A2
   Admin --> A3
+  Admin --> A4
   Admin --> A5
 
-  A2 -. "User=自分の記録のみ\nAdmin=全記録参照可\n所有者=user_id\n操作者=created_by/updated_by" .-> A2
+  A2 -. "User=自分の記録のみ\nAdmin=全記録（作成・編集・削除含む）\nuser_id=所有者 / updated_by=操作者" .-> A2
   A4 -. "sync_queue(IndexedDB)\npending/retrying/failed/conflict/done\n設備マスタ同期は3段階ルール" .-> A4
   A6 -. "AdSense 表示\nログイン・登録フォームには非表示" .-> A6
 ```
-
-> Admin の A4（オフライン・同期）接続は Q44 で確認中。
 
 ---
 
@@ -232,16 +240,18 @@ graph LR
   Anyone(["👤 誰でも\n(Guest/User/Admin)"])
 
   subgraph PUB["公開ページ・PWA・AdSense"]
-    TOP("トップページ\nindex.html")
+    TOP("トップページ\nindex.html\nサービス紹介・導線")
+    GUIDE("/guide/\n利用案内ページ")
     PP("/privacy-policy/")
     CO("/contact/")
     TM("/terms/")
     INST("ホーム画面に追加\nPWA インストール")
-    ADS_PUB("AdSense 広告表示\n公開ページ")
-    ADS_APP("AdSense 広告表示\nホーム・一覧・詳細")
+    ADS_PUB("AdSense\n公開ページ")
+    ADS_APP("AdSense\nホーム・一覧・詳細")
   end
 
   Guest --> TOP
+  Guest --> GUIDE
   Guest --> PP
   Guest --> CO
   Guest --> TM
@@ -249,7 +259,7 @@ graph LR
   Guest --> ADS_PUB
   Anyone --> ADS_APP
 
-  ADS_PUB -. "表示: トップ・固定ページ\n非表示: ログイン・登録フォーム" .-> ADS_PUB
+  TOP -. "ログイン済みでも自動リダイレクトなし\nヘッダーに「ホームへ」リンク表示" .-> TOP
+  ADS_PUB -. "表示: トップ・/guide/・固定ページ\n非表示: ログイン・登録フォーム" .-> ADS_PUB
   ADS_APP -. "非表示: 作業入力中・QR読取中・カメラ撮影中" .-> ADS_APP
-  TOP -. "内容・利用案内ページの詳細は\nQ45 で確認中" .-> TOP
 ```
