@@ -47,6 +47,8 @@ Python を使用する。
 - 記録編集
 - 同期管理
 - マイページ
+- 管理者：ユーザー管理画面（admin のみ）
+- 管理者：集計ダッシュボード（admin のみ）
 - プライバシーポリシー
 - お問い合わせ
 - 利用規約
@@ -62,6 +64,7 @@ Python を使用する。
 - change_password.cgi
 - worklog_api.cgi
 - equipment_api.cgi
+- admin_api.cgi（ユーザー管理・集計）
 - upload.cgi（Phase 5 以降）
 - SQLite データ保存
 
@@ -91,6 +94,8 @@ Python を使用する。
 17. ログイン試行制限（5回失敗で15分ロック）
 18. Google AdSense 表示
 19. privacy-policy / contact / terms ページ配置
+20. 管理者によるユーザー管理（一覧・停止/復活・権限変更・仮パスワード再設定）
+21. 管理者による集計ダッシュボード（件数中心の簡易表示）
 
 ## 3.2 非機能要件
 - HTTPS 前提
@@ -109,7 +114,7 @@ Python を使用する。
 
 ## 4.1 user
 - 自分の記録の作成
-- 自分の記録の参照
+- 自分の記録の参照（**他ユーザーの記録は参照不可**）
 - 自分の記録の編集
 - 自分の記録の論理削除
 - 設備参照
@@ -117,11 +122,22 @@ Python を使用する。
 - 同期実行
 
 ## 4.2 admin
-- 全記録参照（deleted_flag=1 含む）
+- 全記録参照（deleted_flag=1 含む。他ユーザー記録も含む）
 - 設備マスタ編集
-- ユーザー管理
-- 集計確認
+- ユーザー管理（下記参照）
+- 集計ダッシュボード確認
 - 必要な運用設定変更
+
+### admin のユーザー管理操作範囲（MVP）
+- ユーザー一覧表示
+- `is_active` 変更（有効化 / 無効化）
+- `role` 変更（user → admin 昇格 / admin → user 降格）
+- 仮パスワード再設定（管理画面で一時表示。メール送信は MVP 外）
+
+#### 安全制約
+- **最後の1人の admin を user に降格することは禁止**
+- **admin 自身を `is_active=0` にすることは禁止**
+- パスワードリセット時は旧パスワードを無効化し、次回ログイン後に変更を促す
 
 ### admin 初期登録
 MVP では専用管理画面は作らず、DB 直接投入で初期 admin を 1 件作る。
@@ -400,6 +416,25 @@ MVP 後に `equipment_import.cgi` を追加する余地を残す。
 - パスワード変更
 - ログアウト
 
+## 7.11 ユーザー管理画面（admin のみ）
+- ユーザー一覧（login_id / display_name / role / is_active）
+- ユーザー詳細
+- is_active 変更ボタン（有効化 / 無効化）
+- role 変更ボタン（昇格 / 降格）
+- 仮パスワード再設定ボタン（実行後に仮パスワードを画面表示）
+- 最後の admin 降格・自身の無効化は UI レベルで禁止
+
+## 7.12 集計ダッシュボード（admin のみ）
+表示内容（件数中心の簡易表示）
+- 期間別記録件数（今日 / 直近7日 / 直近30日）
+- status 別件数（draft / open / in_progress / done / pending_parts）
+- record_type 別件数
+- フォローアップ期限超過件数
+- ユーザー別記録件数
+- 設備別記録件数（上位N件）
+
+MVP では含めないもの: グラフの高度な可視化、故障傾向分析、CSV/PDF 出力
+
 ## 7.10 固定ページ（必須）
 - /privacy-policy/
 - /contact/
@@ -471,6 +506,13 @@ IndexedDB に以下を保存する。
 - ログイン後・同期時にサーバー側最新データをプル取得する
 - プル同期では削除済みレコードも tombstone として返す
 
+### 設備マスタキャッシュ同期（3段階ルール）
+1. **ログイン時**: `equipment_api.cgi?action=sync_pull&since_token=...` で自動差分取得する
+2. **同期ボタン押下時**: 作業記録同期とあわせて設備マスタも差分同期する
+3. **QR 読取前**: 毎回の通信は行わず、ローカルキャッシュを使う
+   - 例外: QR 値がローカルに存在しない場合のみ、オンライン時に `action=by_qr` で問い合わせる
+   - オフラインで未登録の場合は「設備未登録または未同期」を表示する
+
 ## 9.3 競合ルール
 初期版は **revision 一致時のみ更新** とする。
 
@@ -537,6 +579,7 @@ IndexedDB に以下を保存する。
   - `action=list`
   - `action=search&q=...`
   - `action=by_qr&qr_value=MC-001`
+  - `action=sync_pull&since_token=...`（設備マスタ差分取得）
 - `POST /api/equipment_api.cgi`
   - admin による新規登録
 - `PUT /api/equipment_api.cgi`
@@ -557,14 +600,29 @@ IndexedDB に以下を保存する。
   - `action=delete&log_uuid=...`
   - 実体は論理削除とする
 
-## 11.4 upload.cgi（Phase 5 以降）
+## 11.4 admin_api.cgi（admin のみ）
+- `GET /api/admin_api.cgi`
+  - `action=user_list`（ユーザー一覧）
+  - `action=user_detail&user_id=...`
+  - `action=dashboard`（集計ダッシュボード）
+- `POST /api/admin_api.cgi`
+  - `action=reset_password`（仮パスワード再設定）
+- `PUT /api/admin_api.cgi`
+  - `action=set_active`（is_active 変更）
+  - `action=set_role`（role 変更）
+
+### admin_api.cgi 安全制約
+- すべてのエンドポイントで role=admin チェック必須
+- `set_role` / `set_active` で最後の1人の admin への操作はサーバー側でも拒否する
+
+## 11.5 upload.cgi（Phase 5 以降）
 - `POST /api/upload.cgi`
 
-## 11.5 ページング
+## 11.6 ページング
 - リスト系は `page` と `page_size` を受け付ける
 - レスポンスは `total` と `has_next` を返す
 
-## 11.6 同期 payload
+## 11.7 同期 payload
 
 ### 更新 API
 クライアントは更新時に `base_revision` を送る。
@@ -633,7 +691,7 @@ IndexedDB に以下を保存する。
 - クライアントは同一秒内の重複取得を許容し、`log_uuid` に基づく upsert で重複排除を行う。
 - 競合判定は `revision`、差分取得は `since_token` に役割を分ける。
 
-## 11.7 API レスポンス形式
+## 11.8 API レスポンス形式
 JSON で統一する。
 
 ### 成功時
@@ -680,7 +738,7 @@ HTTP ステータスは `409 Conflict` とする。
 }
 ```
 
-## 11.8 認証ヘッダー
+## 11.9 認証ヘッダー
 ```
 Authorization: Bearer <session_token>
 ```
@@ -693,7 +751,8 @@ Authorization: Bearer <session_token>
 
 - パスワード平文保存禁止（bcrypt ハッシュのみ保存、8文字以上必須）
 - 認証なし更新禁止
-- 他人の記録を勝手に取得不可
+- 一般ユーザーは自分の記録のみ参照・編集・削除可（他ユーザー記録へのアクセスは API レベルで拒否）
+- admin は全記録参照可
 - セッション期限あり（7日、最終操作から延長されるスライディング方式）
 - HTTPS 利用
 - CORS は許可オリジン限定（`https://garyohosu.github.io` / `http://localhost` / `http://127.0.0.1`）
@@ -758,6 +817,9 @@ worklog-pwa/
     detail.html
     sync.html
     mypage.html
+    admin/
+      users.html
+      dashboard.html
   privacy-policy/
     index.html
   contact/
@@ -777,6 +839,7 @@ cgi/
     change_password.cgi
     worklog_api.cgi
     equipment_api.cgi
+    admin_api.cgi
     upload.cgi
   data/
     inspection_app.db
@@ -816,9 +879,10 @@ cgi/
 - 写真添付
 
 ## Phase 6
-- 管理者機能
-- 設備編集
-- 監査用改善
+- ユーザー管理画面（一覧・停止/復活・権限変更・仮パスワード再設定）
+- 集計ダッシュボード（件数中心の簡易表示）
+- 設備マスタ編集（admin）
+- 監査用改善（削除済み記録参照）
 - 運用調整
 
 ---
@@ -841,6 +905,8 @@ cgi/
 12. フォローアップ期限切れを一覧・詳細・ホームで確認できる
 13. AdSense がホーム・一覧・詳細に入る
 14. privacy-policy / contact / terms が存在する
+15. 管理者がユーザー管理（一覧・停止/復活・権限変更・仮パスワード再設定）できる
+16. 管理者が集計ダッシュボードを確認できる
 
 ---
 
@@ -849,7 +915,7 @@ cgi/
 - 写真複数枚対応
 - CSV 出力
 - PDF 出力
-- 集計ダッシュボード
+- 集計ダッシュボード高度化（グラフ可視化・故障傾向分析）
 - 設備ごとの故障傾向分析
 - 通知機能
 - パスワード再発行
