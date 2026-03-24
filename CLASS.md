@@ -160,10 +160,8 @@ classDiagram
     +String recorded_at
     +int needs_followup
     +String followup_due NULL
-    +String local_updated_at NULL
     +String server_updated_at
     +int revision
-    +String sync_state
     +int created_by FK
     +int updated_by FK
     +int deleted_flag
@@ -277,7 +275,7 @@ classDiagram
     +String recorded_at
     +int needs_followup
     +String followup_due NULL
-    +String local_updated_at
+    +String local_updated_at NULL
     +String server_updated_at NULL
     +int revision
     +String sync_state
@@ -287,6 +285,8 @@ classDiagram
     +String deleted_at NULL
     +int deleted_by NULL
   }
+
+  note for WorkLogLocal "local_updated_at / sync_state はクライアント専用\nオフライン新規直後は revision=0, server_updated_at=NULL, sync_state=local_only\ncreate 成功後は revision>=1, sync_state=synced"
 
   class EquipmentCache {
     <<IndexedDB>>
@@ -318,7 +318,7 @@ classDiagram
     +String created_at
   }
 
-  note for SyncQueue "payload: JSON文字列\ncreate: log_uuid + fields\nupdate: log_uuid + base_revision + fields\ndelete: log_uuid + base_revision\nuser_id/revision/sync_state 等はAPI側が管理"
+  note for SyncQueue "payload: JSON文字列\ncreate: log_uuid + fields\nupdate: log_uuid + base_revision + fields\ndelete: log_uuid + base_revision\nuser_id/revision 等はAPI側が管理\nsync_state はクライアント専用で payload に含めない"
 
   class SyncMeta {
     <<IndexedDB>>
@@ -345,7 +345,30 @@ classDiagram
     +String log_uuid
     +int revision
     +String server_updated_at
-    +String sync_state
+  }
+
+  class WorkLogDTO {
+    <<API DTO（サーバー返却）>>
+    +String log_uuid
+    +int user_id
+    +int equipment_id NULL
+    +String record_type
+    +String status
+    +String title
+    +String symptom NULL
+    +String work_detail NULL
+    +String result NULL
+    +String priority NULL
+    +String recorded_at
+    +int needs_followup
+    +String followup_due NULL
+    +int revision
+    +String server_updated_at
+    +int created_by
+    +int updated_by
+    +int deleted_flag
+    +String deleted_at NULL
+    +int deleted_by NULL
   }
 
   class WorkLogLocal {
@@ -353,7 +376,7 @@ classDiagram
     +String log_uuid
     +int revision
     +String server_updated_at NULL
-    +String local_updated_at
+    +String local_updated_at NULL
     +String sync_state
   }
 
@@ -373,8 +396,12 @@ classDiagram
     +int is_active
   }
 
-  WorkLog "同期" <--> WorkLogLocal : sync_push / sync_pull（log_uuid で upsert）
+  WorkLog "レスポンス" --> WorkLogDTO : API返却へ変換
+  WorkLogDTO "保存" --> WorkLogLocal : sync_pull 後に変換して upsert
   EquipmentDB "同期" <--> EquipmentCache : equipment sync_pull（updated_at で差分）
+
+  note for WorkLogDTO "server_updated_at / revision / deleted_flag はサーバー事実\nlocal_updated_at / sync_state は持たない"
+  note for WorkLogLocal "sync_pull で受けた DTO を保存\n既存 conflict は維持、通常は synced"
 ```
 
 ---
@@ -432,8 +459,15 @@ classDiagram
     +SyncPullData data
   }
 
+  class WorkLogDTO {
+    +String log_uuid
+    +int revision
+    +String server_updated_at
+    +int deleted_flag
+  }
+
   class SyncPullData {
-    +WorkLogLocal[] items
+    +WorkLogDTO[] items
     +String next_since_token
   }
 
@@ -443,11 +477,12 @@ classDiagram
   SyncPushEntityCreate "1" --> "1" SyncPushFields : fields
   SyncPushEntityUpdate "1" --> "1" SyncPushFields : fields（変更項目のみ）
   SyncPullResponse "1" --> "1" SyncPullData : data
-  SyncPullData "1" --> "0..*" WorkLogLocal : items
+  SyncPullData "1" --> "0..*" WorkLogDTO : items
 
-  note for SyncPushFields "禁止項目（API側が管理）:\nuser_id / created_by / updated_by\ndeleted_by / server_updated_at\nrevision / sync_state"
+  note for SyncPushFields "禁止項目（API側が管理）:\nuser_id / created_by / updated_by\ndeleted_* / server_updated_at\nrevision\nsync_state はクライアント専用"
   note for SyncPushEntityUpdate "base_revision 必須\nAPI側でrevision check\n成功時 revision = revision + 1"
-  note for SyncPushEntityDelete "物理削除ではない\nAPI側でtombstone更新:\ndeleted_flag=1, deleted_at=now\ndeleted_by=current_user_id\nrevision=revision+1"
+  note for SyncPushEntityDelete "物理削除ではない\nAPI側でtombstone更新:\ndeleted_flag=1, deleted_at=now\ndeleted_by=current_user_id\nrevision=revision+1\nserver_updated_at=now"
+  note for SyncPullData "items は WorkLogDTO\nクライアントで WorkLogLocal に変換して保存"
 ```
 
 ---

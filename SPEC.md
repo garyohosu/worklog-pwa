@@ -212,10 +212,8 @@ MVP 後に `equipment_import.cgi` を追加する余地を残す。
 - recorded_at: TEXT
 - needs_followup: INTEGER
 - followup_due: TEXT
-- local_updated_at: TEXT（ローカル表示用の参考時刻。競合判定には使わない）
 - server_updated_at: TEXT（サーバー保存日時。UTC の ISO 8601）
 - revision: INTEGER NOT NULL DEFAULT 1（競合判定の唯一の基準）
-- sync_state: TEXT
 - created_by: INTEGER
 - updated_by: INTEGER
 - deleted_flag: INTEGER（論理削除。1=削除済み）
@@ -244,18 +242,10 @@ MVP 後に `equipment_import.cgi` を追加する余地を残す。
 
 MVP では入力必須にしない。一覧絞り込み対象には含めない。詳細画面では表示可。
 
-### sync_state 固定値
-- local_only
-- dirty
-- synced
-- failed
-- conflict
-
 ### work_logs 補足
 - `user_id` は記録の所有者を表す
 - `created_by` / `updated_by` / `deleted_by` は操作ユーザーを表す
 - 競合判定は `revision` のみで行う
-- `local_updated_at` は UI 表示用の参考値であり、更新可否の判定には使わない
 - `server_updated_at` と `deleted_at` は UTC の ISO 8601 で保持する
 
 ## 5.4 work_photos
@@ -555,6 +545,13 @@ IndexedDB に以下を保存する。
 ### 9.1.2 localStorage
 - `session_token`
 
+### 9.1.3 WorkLogLocal 補足
+- `local_updated_at` はクライアント専用項目であり、サーバー DB には保存しない
+- `sync_state` はクライアント専用項目であり、サーバー DB には保存しない
+- `sync_state` 固定値: `local_only` / `dirty` / `synced` / `failed` / `conflict`
+- オフライン新規作成直後は `revision = 0`、`server_updated_at = NULL`、`sync_state = local_only` とする
+- `create` 成功後はサーバー返却値で `revision >= 1`、`server_updated_at`、`sync_state = synced` に更新する
+
 ## 9.2 同期方式
 - 新規記録は log_uuid をクライアントで発行
 - `action=create` の payload に `user_id` は含めない
@@ -570,6 +567,7 @@ IndexedDB に以下を保存する。
 - ログイン後・同期時にサーバー側最新データをプル取得する
 - プル同期では削除済みレコードも tombstone として返す
 - 同期ボタン実行時と再ログイン後の再同期は、`session_check` → `sync_push` → `sync_pull` を 1 セットで実行する
+- `sync_pull` の `items` はサーバー DTO（`WorkLogDTO`）を返し、クライアントはそれを `WorkLogLocal` に変換して保存する
 
 ### 設備マスタキャッシュ同期（3段階ルール）
 1. **ログイン時**: `equipment_api.cgi?action=sync_pull&since_token=...` で自動差分取得する
@@ -769,6 +767,11 @@ IndexedDB に以下を保存する。
 }
 ```
 
+- `sync_pull.data.items` は `WorkLogDTO` とし、`local_updated_at` / `sync_state` は含めない
+- クライアントは受信後に `WorkLogLocal` へ変換する
+- MVP では新規取り込み時の `local_updated_at` は `server_updated_at` を入れてよい
+- `sync_state` は通常 `synced`、既存 `conflict` は維持する
+
 ### 差分取得ロジック（since_token）
 - サーバーは `server_updated_at >= since_token`（以上）の条件で検索する。
 - `next_since_token` は、返却アイテム群の `server_updated_at` の最大値とする（空なら `since_token` を維持）。
@@ -821,6 +824,8 @@ HTTP ステータスは `409 Conflict` とする。
   "errors": []
 }
 ```
+
+- `server_entity` は `WorkLogDTO` とする
 
 ## 11.9 認証ヘッダー
 ```
