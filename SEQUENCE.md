@@ -53,7 +53,8 @@ sequenceDiagram
   participant DB
 
   User->>Browser: login_id / password 入力
-  Browser->>API: POST /api/login.cgi {login_id, password, ip}
+  Browser->>API: POST /api/login.cgi {login_id, password}
+  API->>API: 接続元 IP を取得
   API->>DB: SELECT login_attempts（直近15分の失敗回数）
   DB-->>API: count < 5
   API->>DB: SELECT users WHERE login_id
@@ -86,6 +87,7 @@ sequenceDiagram
 
   User->>Browser: login_id / 誤ったパスワード 入力
   Browser->>API: POST /api/login.cgi
+  API->>API: 接続元 IP を取得
   API->>DB: SELECT login_attempts（直近15分の失敗回数）
   DB-->>API: count >= 5
   API->>DB: INSERT login_attempts (success=0)
@@ -184,9 +186,10 @@ sequenceDiagram
   Browser->>IDB: 下書き保存 {log_uuid, sync_state:"local_only"}
   User->>Browser: 保存ボタン押下
   Browser->>API: POST /api/worklog_api.cgi?action=create (Bearer token)
-  Note right of Browser: {log_uuid, user_id, equipment_id, record_type,<br/>title, symptom, work_detail, ...}
-  API->>DB: SELECT sessions → user_id 確認
-  API->>DB: INSERT work_logs (revision=1, created_by=user_id, server_updated_at=now)
+  Note right of Browser: {log_uuid, equipment_id, record_type,<br/>title, symptom, work_detail, ...}
+  API->>DB: SELECT sessions → current_user_id 確認
+  API->>API: request に user_id が含まれていたらエラー
+  API->>DB: INSERT work_logs (user_id=current_user_id,<br/>revision=1, created_by=current_user_id,<br/>updated_by=current_user_id, server_updated_at=now)
   DB-->>API: OK
   API-->>Browser: {status:"ok", data:{log_uuid, revision:1, server_updated_at}}
   Browser->>IDB: UPDATE {sync_state:"synced", revision:1, server_updated_at}
@@ -209,7 +212,7 @@ sequenceDiagram
   Browser->>IDB: 記録保存 {sync_state:"local_only"}
   Browser->>IDB: sync_queue に積む {operation:"create", status:"pending"}
   Browser-->>User: 「下書き保存済み（未同期）」表示
-  Note over User,IDB: 通信復帰後 SEQ-15（Sync Push）へ
+  Note over User,IDB: 通信復帰後 SEQ-16（Sync Push）へ
 ```
 
 ---
@@ -309,7 +312,7 @@ sequenceDiagram
   else role=admin
     API->>DB: SELECT work_logs WHERE log_uuid（全記録対象）
   end
-  API->>DB: UPDATE work_logs SET deleted_flag=1, deleted_at=now,<br/>deleted_by=current_user_id, revision=revision+1
+  API->>DB: UPDATE work_logs SET deleted_flag=1, deleted_at=now,<br/>deleted_by=current_user_id, revision=revision+1,<br/>server_updated_at=now
   DB-->>API: OK
   API-->>Browser: {status:"ok"}
   Browser->>IDB: deleted_flag=1 で更新（tombstone）
@@ -334,7 +337,11 @@ sequenceDiagram
   Browser->>Browser: qr_value 読み取り（例: "MC-001"）
   Browser->>IDB: SELECT equipment WHERE qr_value="MC-001"
   IDB-->>Browser: equipment record ヒット
-  Browser-->>User: 設備を自動選択して記録フォームに反映
+  alt equipment.is_active = 1
+    Browser-->>User: 設備を自動選択して記録フォームに反映
+  else equipment.is_active = 0
+    Browser-->>User: 「この設備は無効です」と表示し、自動選択しない
+  end
 ```
 
 ---
@@ -356,7 +363,11 @@ sequenceDiagram
   DB-->>API: equipment record
   API-->>Browser: {status:"ok", data:{equipment}}
   Browser->>IDB: equipment を追加保存
-  Browser-->>User: 設備を自動選択
+  alt equipment.is_active = 1
+    Browser-->>User: 設備を自動選択
+  else equipment.is_active = 0
+    Browser-->>User: 「この設備は無効です」と表示し、自動選択しない
+  end
 ```
 
 ---
@@ -393,15 +404,21 @@ sequenceDiagram
   User->>Browser: 同期ボタン押下（または自動同期）
   Browser->>API: GET /api/session_check.cgi (Bearer token)
   API-->>Browser: {status:"ok"}
-  Browser->>IDB: sync_queue WHERE status IN ("pending","retrying") を取得
+  Browser->>IDB: sync_queue WHERE status IN ("pending","failed") を取得
   IDB-->>Browser: queue items（N件）
+  Browser->>IDB: 対象キューを retrying に更新
   Browser->>API: POST /api/worklog_api.cgi?action=sync_push (Bearer token)
   Note right of Browser: {items:[{operation:"create/update/delete", entity:{...base_revision}}]}
-  API->>DB: 各アイテムを INSERT / UPDATE / DELETE
+  API->>DB: 各アイテムを create / update / delete(tombstone 更新)
   DB-->>API: OK
   API-->>Browser: {status:"ok", data:{results:[{log_uuid, status:"ok", revision:N}]}}
   Browser->>IDB: 各レコード sync_state="synced", revision 更新
   Browser->>IDB: sync_queue.status="done"
+  Browser->>IDB: since_token を読み込む
+  Browser->>API: GET /api/worklog_api.cgi?action=sync_pull&since_token=... (Bearer token)
+  API-->>Browser: {status:"ok", data:{items, next_since_token}}
+  Browser->>IDB: items を upsert（tombstone 含む）
+  Browser->>IDB: since_token = next_since_token に更新
   Browser-->>User: 「同期完了 N件」
 ```
 
@@ -429,7 +446,9 @@ sequenceDiagram
   Browser->>IDB: A → sync_state="conflict", sync_queue.status="conflict"
   Browser->>IDB: B → sync_state="synced", revision=8
   Browser->>IDB: C → sync_state="synced", revision=1
-  Browser-->>User: 同期完了（B,C 成功 / A 競合1件 → 同期管理画面に表示）
+  Note over Browser: conflict は自動再送しない。手動解決後のみ再送する
+  Note over Browser: push 後は SEQ-18 の sync_pull を続けて実行する
+  Browser-->>User: 送信完了（B,C 成功 / A 競合1件 → 同期管理画面に表示）
 ```
 
 ---
@@ -478,10 +497,15 @@ sequenceDiagram
   Note over Browser: SEQ-2 ログイン成功直後
   Browser->>IDB: equipment の since_token を読み込む
   Browser->>API: GET /api/equipment_api.cgi?action=sync_pull&since_token=... (Bearer)
-  API->>DB: SELECT equipment WHERE updated_at >= since_token AND is_active=1
-  DB-->>API: equipment list
+  API->>DB: SELECT equipment WHERE updated_at >= since_token
+  DB-->>API: equipment list（is_active=0 含む）
   API-->>Browser: {status:"ok", data:{items, next_since_token}}
-  Browser->>IDB: equipment を upsert
+  loop 各設備
+    Browser->>IDB: equipment を upsert
+    alt is_active = 0
+      Browser->>IDB: 設備選択候補と QR 自動選択対象から除外
+    end
+  end
   Browser->>IDB: equipment_since_token = next_since_token に更新
   Note over Browser: 同期ボタン押下時も同じフローを実行
 ```
@@ -508,10 +532,17 @@ sequenceDiagram
   Browser->>API: POST /api/login.cgi
   API-->>Browser: {session_token（新）, user_id, role}
   Browser->>Browser: 新しい session_token を保存
-  Browser->>IDB: sync_queue WHERE status="pending" を取得
+  Browser->>IDB: sync_queue WHERE status IN ("pending","failed") を取得
+  Browser->>IDB: 対象キューを retrying に更新
   Browser->>API: POST sync_push（新トークンで再送）
   API-->>Browser: {results:[...]}
   Browser->>IDB: sync_state / queue 更新
+  Note over Browser: conflict は自動再送しない。手動解決後のみ再送する
+  Browser->>IDB: since_token を読み込む
+  Browser->>API: GET /api/worklog_api.cgi?action=sync_pull&since_token=... (Bearer token)
+  API-->>Browser: {status:"ok", data:{items, next_since_token}}
+  Browser->>IDB: items を upsert（tombstone 含む）
+  Browser->>IDB: since_token = next_since_token に更新
   Browser-->>User: 「同期完了」
 ```
 
